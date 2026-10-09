@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "purpose": "I want to create a desktop app for writing books. The idea is that the app is an entire publishing company from draft to ebook - with each role of the company filled by AI agents. The app should be minimalistic and elegant but full of features that you would find in Reedsy or Scrivener. I want to employ workspaces for each author/pen name, so that manuscripts are organized by their respective author/pen name, and I want a built in outline workshop feature that facilitates an environment for building the bones of their manuscript.",
+  "principles": [
+    {
+      "text": "Built for: Authors",
+      "from": "audience"
+    },
+    {
+      "text": "Signing in is optional: the app is usable without an account.",
+      "from": "auth"
+    },
+    {
+      "text": "It keeps working without a connection and catches up when one returns.",
+      "from": "connectivity"
+    }
+  ],
+  "mustHaves": [
+    {
+      "id": "MH-1",
+      "text": "outline",
+      "acceptance": [
+        "A person using the app can: outline",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-2",
+      "text": "write",
+      "acceptance": [
+        "A person using the app can: write",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-3",
+      "text": "edit",
+      "acceptance": [
+        "A person using the app can: edit",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-4",
+      "text": "format",
+      "acceptance": [
+        "A person using the app can: format",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-5",
+      "text": "and export",
+      "acceptance": [
+        "A person using the app can: and export",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    }
+  ],
+  "nonGoals": [],
+  "stack": {
+    "needsBackend": true,
+    "gate": "People sign in, so something has to store accounts and their data.",
+    "preset": "Content / publishing",
+    "pieces": [
+      {
+        "slot": "framework",
+        "name": "Vite + React",
+        "by": "recommender"
+      },
+      {
+        "slot": "styling",
+        "name": "Tailwind CSS",
+        "by": "preset"
+      },
+      {
+        "slot": "ui",
+        "name": "shadcn/ui",
+        "by": "preset"
+      },
+      {
+        "slot": "data",
+        "name": "IndexedDB (Dexie)",
+        "by": "recommender"
+      },
+      {
+        "slot": "auth",
+        "name": "none",
+        "by": "recommender"
+      },
+      {
+        "slot": "realtime",
+        "name": "none",
+        "by": "recommender"
+      },
+      {
+        "slot": "deploy",
+        "name": "static bundle (PWA-ready)",
+        "by": "recommender"
+      },
+      {
+        "slot": "integrations",
+        "name": "none",
+        "by": "preset"
+      }
+    ]
+  },
+  "openQuestions": [],
+  "amendments": [
+    {
+      "version": 1,
+      "at": "2026-10-09T02:23:57.174Z",
+      "by": "Ganger",
+      "reason": "Written from the brief and the stack decision, before any journeyman ran."
+    }
+  ]
+}

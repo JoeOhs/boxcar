@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "outline",
+      "title": "outline",
+      "aspect": "logic",
+      "serves": [
+        "outline"
+      ],
+      "files": [],
+      "state": "planned",
+      "round": 1
+    },
+    {
+      "id": "write",
+      "title": "write",
+      "aspect": "logic",
+      "serves": [
+        "write"
+      ],
+      "files": [],
+      "state": "planned",
+      "round": 1
+    },
+    {
+      "id": "edit",
+      "title": "edit",
+      "aspect": "logic",
+      "serves": [
+        "edit"
+      ],
+      "files": [],
+      "state": "planned",
+      "round": 1
+    },
+    {
+      "id": "format",
+      "title": "format",
+      "aspect": "logic",
+      "serves": [
+        "format"
+      ],
+      "files": [],
+      "state": "planned",
+      "round": 1
+    },
+    {
+      "id": "and-export",
+      "title": "and export",
+      "aspect": "logic",
+      "serves": [
+        "and export"
+      ],
+      "files": [],
+      "state": "planned",
+      "round": 1
+    }
+  ],
+  "edges": []
+}
