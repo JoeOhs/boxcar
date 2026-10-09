@@ -1,0 +1,105 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db, getSetting, setSetting, type Id, type Manuscript, type Workspace } from "@/db/schema";
+import { useOnline } from "@/lib/hooks";
+
+export type Screen = "workspaces" | "outline" | "write" | "edit" | "format" | "export" | "settings";
+export type Theme = "light" | "dark";
+
+interface AppState {
+  /** True until the saved choices have been read from the local database. */
+  loading: boolean;
+  online: boolean;
+  screen: Screen;
+  navigate: (screen: Screen) => void;
+  workspaces: Workspace[];
+  /** The author / pen name being worked in. */
+  workspace: Workspace | undefined;
+  /** Manuscripts of the active workspace. */
+  manuscripts: Manuscript[];
+  /** The book being worked on. */
+  manuscript: Manuscript | undefined;
+  /** The chapter shared by the Write and Edit screens. */
+  chapterId: Id | null;
+  setChapterId: (id: Id | null) => void;
+  selectWorkspace: (id: Id) => void;
+  selectManuscript: (id: Id) => void;
+  theme: Theme;
+  toggleTheme: () => void;
+}
+
+const AppContext = createContext<AppState | null>(null);
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [screen, setScreen] = useState<Screen>("workspaces");
+  const [chapterId, setChapterId] = useState<Id | null>(null);
+  const online = useOnline();
+
+  // undefined = still loading, null = nothing saved yet.
+  const activeWorkspaceId = useLiveQuery(async () => (await getSetting<Id>("activeWorkspaceId")) ?? null, []);
+  const activeManuscriptId = useLiveQuery(async () => (await getSetting<Id>("activeManuscriptId")) ?? null, []);
+  const savedTheme = useLiveQuery(async () => (await getSetting<Theme>("theme")) ?? "light", [], "light");
+  const workspaceRows = useLiveQuery(() => db.workspaces.orderBy("name").toArray(), []);
+
+  const workspaces = useMemo(() => workspaceRows ?? [], [workspaceRows]);
+  const workspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0];
+
+  const manuscriptRows = useLiveQuery(
+    async () => {
+      if (!workspace) return [];
+      const rows = await db.manuscripts.where("workspaceId").equals(workspace.id).toArray();
+      return rows.sort((a, b) => a.title.localeCompare(b.title));
+    },
+    [workspace?.id],
+  );
+  const manuscripts = useMemo(() => manuscriptRows ?? [], [manuscriptRows]);
+  const manuscript = manuscripts.find((m) => m.id === activeManuscriptId) ?? manuscripts[0];
+
+  const theme: Theme = savedTheme === "dark" ? "dark" : "light";
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  const selectWorkspace = useCallback((id: Id) => {
+    void setSetting("activeWorkspaceId", id);
+    setChapterId(null);
+  }, []);
+  const selectManuscript = useCallback((id: Id) => {
+    void setSetting("activeManuscriptId", id);
+    setChapterId(null);
+  }, []);
+  const toggleTheme = useCallback(() => {
+    void setSetting("theme", theme === "dark" ? "light" : "dark");
+  }, [theme]);
+
+  const loading =
+    activeWorkspaceId === undefined ||
+    activeManuscriptId === undefined ||
+    workspaceRows === undefined ||
+    manuscriptRows === undefined;
+
+  const value: AppState = {
+    loading,
+    online,
+    screen,
+    navigate: setScreen,
+    workspaces,
+    workspace,
+    manuscripts,
+    manuscript,
+    chapterId,
+    setChapterId,
+    selectWorkspace,
+    selectManuscript,
+    theme,
+    toggleTheme,
+  };
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+export function useApp(): AppState {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error("useApp must be used inside <AppProvider>");
+  return ctx;
+}

@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #faf8f4;
+  --foreground: #2a2622;
+  --card: #ffffff;
+  --card-foreground: #2a2622;
+  --muted: #f1ede6;
+  --muted-foreground: #7a726a;
+  --border: #e3ddd2;
+  --input: #d9d2c5;
+  --primary: #3d4a5c;
+  --primary-foreground: #fbfaf7;
+  --secondary: #ece7dd;
+  --secondary-foreground: #2a2622;
+  --accent: #efeae0;
+  --accent-foreground: #2a2622;
+  --destructive: #b3392f;
+  --ring: #8a93a3;
+  --success: #3f7a52;
+  --warning: #a8741a;
+}
+
+.dark {
+  --background: #1b1a18;
+  --foreground: #ece8e1;
+  --card: #232120;
+  --card-foreground: #ece8e1;
+  --muted: #262422;
+  --muted-foreground: #9b948a;
+  --border: #35322e;
+  --input: #45413c;
+  --primary: #d9d3c7;
+  --primary-foreground: #1b1a18;
+  --secondary: #2d2a27;
+  --secondary-foreground: #ece8e1;
+  --accent: #302d2a;
+  --accent-foreground: #ece8e1;
+  --destructive: #d9534a;
+  --ring: #6f7785;
+  --success: #6bb487;
+  --warning: #d9a441;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* The writing surface and read-only manuscript text. */
+.prose-manuscript {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.prose-manuscript p {
+  margin: 0 0 1em;
+}
+.prose-manuscript h1,
+.prose-manuscript h2,
+.prose-manuscript h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.6em 0 0.6em;
+}
+.prose-manuscript h1 {
+  font-size: 1.75rem;
+}
+.prose-manuscript h2 {
+  font-size: 1.4rem;
+}
+.prose-manuscript h3 {
+  font-size: 1.15rem;
+}
+.prose-manuscript blockquote {
+  margin: 1em 0;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--border);
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+.prose-manuscript ul {
+  list-style: disc;
+  margin: 0 0 1em 1.5rem;
+}
+.prose-manuscript ol {
+  list-style: decimal;
+  margin: 0 0 1em 1.5rem;
+}
+.prose-manuscript hr {
+  border: 0;
+  margin: 1.5em 0;
+  text-align: center;
+  height: 1.5em;
+  overflow: visible;
+}
+.prose-manuscript hr::after {
+  content: "* * *";
+  letter-spacing: 0.5em;
+  color: var(--muted-foreground);
+}
+
+.editor-surface:focus {
+  outline: none;
+}
+.editor-surface:empty::before {
+  content: attr(data-hint);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}

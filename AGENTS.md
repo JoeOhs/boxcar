@@ -13,7 +13,7 @@ It must do these on day one:
 Stack: Content / publishing. 6 override(s), each with its reason, are in ganger/brain/decisions.md.
 
 Latest rounds:
-- Round 1: failed before it could finish
+- Round 1: finished, and the checks passed
 
 Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md, rounds.md and notes.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks. notes.md is written by the person who asked for this app, and it wins over everything else here.
 

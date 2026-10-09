@@ -3,58 +3,88 @@
   "cards": [
     {
       "id": "outline",
-      "title": "outline",
-      "aspect": "logic",
+      "title": "Outline workshop",
+      "aspect": "screen",
       "serves": [
         "outline"
       ],
-      "files": [],
-      "state": "planned",
-      "round": 1
+      "files": [
+        {
+          "path": "src/screens/Outline.tsx",
+          "symbol": "Outline"
+        }
+      ],
+      "state": "verified",
+      "round": 1,
+      "role": "integration"
     },
     {
       "id": "write",
-      "title": "write",
-      "aspect": "logic",
+      "title": "Writing desk",
+      "aspect": "screen",
       "serves": [
         "write"
       ],
-      "files": [],
-      "state": "planned",
-      "round": 1
+      "files": [
+        {
+          "path": "src/screens/Write.tsx",
+          "symbol": "Write"
+        }
+      ],
+      "state": "verified",
+      "round": 1,
+      "role": "integration"
     },
     {
       "id": "edit",
-      "title": "edit",
-      "aspect": "logic",
+      "title": "Edit and revisions",
+      "aspect": "screen",
       "serves": [
         "edit"
       ],
-      "files": [],
-      "state": "planned",
-      "round": 1
+      "files": [
+        {
+          "path": "src/screens/Edit.tsx",
+          "symbol": "Edit"
+        }
+      ],
+      "state": "verified",
+      "round": 1,
+      "role": "integration"
     },
     {
       "id": "format",
-      "title": "format",
-      "aspect": "logic",
+      "title": "Book format and preview",
+      "aspect": "screen",
       "serves": [
         "format"
       ],
-      "files": [],
-      "state": "planned",
-      "round": 1
+      "files": [
+        {
+          "path": "src/screens/Format.tsx",
+          "symbol": "Format"
+        }
+      ],
+      "state": "verified",
+      "round": 1,
+      "role": "integration"
     },
     {
       "id": "and-export",
-      "title": "and export",
+      "title": "EPUB export for Amazon KDP",
       "aspect": "logic",
       "serves": [
         "and export"
       ],
-      "files": [],
-      "state": "planned",
-      "round": 1
+      "files": [
+        {
+          "path": "src/lib/epub.ts",
+          "symbol": "buildEpub"
+        }
+      ],
+      "state": "verified",
+      "round": 1,
+      "role": "integration"
     }
   ],
   "edges": []

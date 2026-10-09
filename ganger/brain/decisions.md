@@ -51,4 +51,10 @@ Archetype: Content / publishing (content-publishing). Publishing apps are read-h
 - **By:** recommender
 - **When:** 2026-10-09T02:23:57.178Z
 
+## What the person decided
+
+The foreman asked; these answers stand over anything a journeyman would otherwise choose.
+
+- Round 1: The AI staff (editor, formatter and so on) need an AI service to work, and that means being online. Should the app ask you for your own AI key, such as one from OpenAI or Anthropic, or should the first version leave the AI staff out and focus on outlining, writing, editing, formatting and export? **It should ask the user for an API key from their provider**
+
 Written by Ganger from the stack decision and every override, with its reason.
