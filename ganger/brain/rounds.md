@@ -43,8 +43,21 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 91f1f085e3
 - Cost: $2.05
 
 - Integration: All seven changes from the feedback are done. `tsc --noEmit` passes and `vite build` succeeds. I haven't run the app in a browser, and the image calls to OpenAI and Google are untested against the real services. (20 files)
+
+## Round 4: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "AI staff The outliner, editor, proofreader and formatter ...": Stored API keys need to be encrypted and listed when a user inputs their keys. There needs to be options for users to revoke and delete stored keys
+2. In "Writing desk" (src/screens/Write.tsx · Write), the header "Write respect: 0 words" on /: add a button that activates a "Ghostwriter", the ghostwriter section should open a menu on the right that lets the user interact with their ghostwriter
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $1.00
+
+- Integration: Both changes are in. `tsc --noEmit` passes and `vite build` succeeds. I haven't run the app in a browser, so the encryption and the Ghostwriter chat are untested at runtime. I haven't tried a real provider call either. (11 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

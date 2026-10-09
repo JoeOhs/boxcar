@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { getAiSettings, type AgentRole, type AiProvider, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
+import { type AgentRole, type AiProvider, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
 import { stageInfo } from "./editing";
+import { getAiSettings } from "./keyVault";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
@@ -8,6 +9,7 @@ export const AGENT_LABEL: Record<AgentRole, string> = {
   editor: "Editor",
   proofreader: "Proofreader",
   formatter: "Formatter",
+  ghostwriter: "Ghostwriter",
 };
 
 const ROLE_PROMPT: Record<AgentRole, string> = {
@@ -19,6 +21,8 @@ const ROLE_PROMPT: Record<AgentRole, string> = {
     "You are the Proofreader at a small publishing house. You find spelling, grammar, punctuation and consistency errors and change as little as possible.",
   formatter:
     "You are the Formatter at a small publishing house. You advise on how an ebook for Amazon KDP should look: fonts, spacing, headings, scene breaks, drop caps and table of contents. Give concrete recommendations.",
+  ghostwriter:
+    "You are the Ghostwriter at a small publishing house. You write prose for the author, in the author's own voice: continuing scenes, drafting new ones, writing dialogue and description, and rewriting passages on request. Match the voice, tense, point of view and style of the text you are shown, and keep to the facts of the story so far. When asked for prose, give the prose itself, ready to paste into the manuscript, with no preamble. The author has the final say on every word.",
 };
 
 export const DEFAULT_MODEL: Record<AiProvider, string> = {

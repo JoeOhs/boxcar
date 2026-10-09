@@ -19,7 +19,7 @@ Vite + React + Tailwind CSS (v4) + shadcn/ui-style components (copied into `src/
 Supporting screens (not must-haves on their own):
 - `src/screens/WorkspaceGate.tsx`: the first screen. Choose an author/pen name workspace or create one; nothing else is shown until then. `src/components/WorkspaceSwitcher.tsx` is the "Workspaces" button at the bottom of the left menu (switch or add a workspace).
 - `src/screens/Manuscripts.tsx`: rename and delete the open workspace; create, open and delete manuscripts in it; set stage and target word count.
-- `src/screens/Settings.tsx`: the author's own AI provider (OpenAI or Anthropic), key and model, saved with `saveAiSettings` and tested on request.
+- `src/screens/Settings.tsx`: the author's own AI provider (OpenAI or Anthropic), key and model, stored encrypted by `addApiKey` (`src/lib/keyVault.ts`), listed with revoke and delete, and tested on request.
 
 ## Supporting code
 - `src/lib/store.ts`: write operations (create/patch workspaces, manuscripts, outline items, chapters, snapshots).

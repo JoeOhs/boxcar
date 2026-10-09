@@ -2,7 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { migrateLegacyKeys } from "./lib/keyVault";
 import { AppProvider } from "./state/AppState";
+
+// Keys an earlier version saved as plain text are encrypted before anything reads them.
+void migrateLegacyKeys();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

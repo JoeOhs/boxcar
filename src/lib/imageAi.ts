@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { getImageAiSettings, type CoverBrief, type ImageAiSettings, type ImageProvider } from "@/db/schema";
+import { type CoverBrief, type ImageAiSettings, type ImageProvider } from "@/db/schema";
 import { CATEGORY_LABEL, type Genre } from "./genres";
+import { getImageAiSettings } from "./keyVault";
 
 /**
  * Image generation for the Book Cover workshop. Like the text AI staff it runs on

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ghost, GripVertical, Plus, Trash2 } from "lucide-react";
 import { deleteChapter, type Chapter, type ChapterKind, type ChapterStatus, type Id, type Manuscript } from "@/db/schema";
 import { CHAPTER_KIND_LABEL, numberChapters } from "@/lib/chapters";
+import { genreById, genreContext } from "@/lib/genres";
 import { useChapters } from "@/lib/hooks";
 import {
   moveSceneNextTo,
@@ -12,8 +13,10 @@ import {
   type Scene,
 } from "@/lib/scenes";
 import { createChapter, moveChapter, saveChapter } from "@/lib/store";
+import { escapeHtml, htmlToText, textToParagraphs } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { AgentChat } from "@/components/AgentChat";
 import { EditableHtml, EditorToolbar } from "@/components/RichEditor";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -43,6 +46,8 @@ function useChapterDraft(chapter: Chapter) {
   const [selectedId, setSelectedId] = useState<Id>(initial[0].id);
   const [saved, setSaved] = useState(true);
   const [drag, setDrag] = useState<DragState | null>(null);
+  // Bumped for a scene whose text was changed from outside its own text field (the Ghostwriter), so the field reloads it.
+  const [revs, setRevs] = useState<Record<Id, number>>({});
   const latest = useRef({ title: chapter.title, scenes: initial });
   const timer = useRef<number | undefined>(undefined);
   const chapterId = chapter.id;
@@ -106,12 +111,22 @@ function useChapterDraft(chapter: Chapter) {
     title,
     scenes,
     selectedId,
+    revs,
     saved,
     words: scenes.reduce((sum, s) => sum + sceneWords(s), 0),
     drag,
     setTitle: (value: string) => commit(latest.current.scenes, value),
     editScene: (id: Id, html: string) =>
       commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, html } : s))),
+    /** Adds text from the Ghostwriter to the end of a scene, one paragraph per line. */
+    appendToScene: (id: Id, text: string) => {
+      const paragraphs = textToParagraphs(text)
+        .map((p) => `<p>${escapeHtml(p)}</p>`)
+        .join("");
+      if (!paragraphs) return;
+      commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, html: s.html + paragraphs } : s)));
+      setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }));
+    },
     renameScene: (id: Id, value: string) =>
       commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, title: value } : s))),
     addScene: (afterId?: Id) => {
@@ -341,8 +356,66 @@ function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, sceneList 
   );
 }
 
+/**
+ * The Ghostwriter: a conversation, in a menu on the right, with an AI that drafts prose in the author's voice.
+ * It is shown the book's genre, the chapter so far and the selected scene, and any reply can be added to that scene.
+ */
+function Ghostwriter({ manuscript, chapter, draft }: { manuscript: Manuscript; chapter?: Chapter; draft?: ChapterDraft }) {
+  const selected = draft?.scenes.find((s) => s.id === draft.selectedId);
+
+  function getContext(): string {
+    const parts = [`Title: ${manuscript.title}`, genreContext(genreById(manuscript.genre))];
+    if (manuscript.description) parts.push(`Description: ${manuscript.description}`);
+    if (chapter && draft) {
+      const before = draft.scenes
+        .slice(0, selected ? draft.scenes.indexOf(selected) : draft.scenes.length)
+        .map((s) => htmlToText(s.html))
+        .join("\n\n");
+      if (before.trim()) parts.push(`The chapter "${draft.title}" before the selected scene:\n${before.slice(-4000)}`);
+      if (selected) {
+        parts.push(`The selected scene${selected.title ? ` "${selected.title}"` : ""}:\n${htmlToText(selected.html).slice(-6000) || "(empty so far)"}`);
+      }
+    }
+    return parts.filter(Boolean).join("\n\n");
+  }
+
+  return (
+    <aside className="w-96 shrink-0 border-l border-border" aria-label="Ghostwriter">
+      <AgentChat
+        manuscriptId={manuscript.id}
+        role="ghostwriter"
+        getContext={getContext}
+        quickPrompts={
+          selected
+            ? [
+                { label: "Continue the scene", prompt: "Continue the selected scene from where it stops, in my voice. Write about 200 words." },
+                { label: "What happens next?", prompt: "Suggest three different directions the story could take after the selected scene, one or two sentences each." },
+                { label: "Tighten it", prompt: "Rewrite the selected scene more tightly, keeping its events, voice and meaning." },
+              ]
+            : undefined
+        }
+        onUseReply={
+          draft && selected
+            ? { label: "Add to scene", run: (text) => draft.appendToScene(selected.id, text) }
+            : undefined
+        }
+      />
+    </aside>
+  );
+}
+
 /** The open chapter: its menu entry with scenes, and the writing block made of scenes. */
-function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps, "sceneList"> }) {
+function ChapterDesk({
+  chapter,
+  manuscript,
+  menu,
+  ghostwriterOpen,
+}: {
+  chapter: Chapter;
+  manuscript: Manuscript;
+  menu: Omit<MenuProps, "sceneList">;
+  ghostwriterOpen: boolean;
+}) {
   const draft = useChapterDraft(chapter);
 
   return (
@@ -376,7 +449,7 @@ function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-2xl space-y-4 px-6 py-6">
               {draft.scenes.map((s, i) => (
-                <SceneCard key={s.id} draft={draft} scene={s} index={i} />
+                <SceneCard key={`${s.id}:${draft.revs[s.id] ?? 0}`} draft={draft} scene={s} index={i} />
               ))}
               <Button variant="outline" className="w-full border-dashed" onClick={() => draft.addScene()}>
                 <Plus /> Add scene
@@ -385,12 +458,14 @@ function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps
           </div>
         </div>
       </section>
+      {ghostwriterOpen ? <Ghostwriter manuscript={manuscript} chapter={chapter} draft={draft} /> : null}
     </>
   );
 }
 
 function WriteBody({ manuscript }: { manuscript: Manuscript }) {
   const { chapterId, setChapterId } = useApp();
+  const [ghostwriterOpen, setGhostwriterOpen] = useState(false);
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
@@ -417,24 +492,35 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
         title="Write"
         description={`${manuscript.title}: ${total.toLocaleString()} words${manuscript.targetWordCount ? ` of ${manuscript.targetWordCount.toLocaleString()}` : ""}`}
         actions={
-          current ? (
-            <>
-              <Button size="icon" variant="ghost" title="Move earlier" onClick={() => void moveChapter(current.id, "up")}>
-                <ArrowUp />
-              </Button>
-              <Button size="icon" variant="ghost" title="Move later" onClick={() => void moveChapter(current.id, "down")}>
-                <ArrowDown />
-              </Button>
-              <Button size="icon" variant="ghost" title="Delete" onClick={() => void remove(current)}>
-                <Trash2 />
-              </Button>
-            </>
-          ) : undefined
+          <>
+            <Button
+              variant={ghostwriterOpen ? "default" : "outline"}
+              size="sm"
+              aria-pressed={ghostwriterOpen}
+              title={ghostwriterOpen ? "Close the Ghostwriter" : "Open the Ghostwriter"}
+              onClick={() => setGhostwriterOpen((open) => !open)}
+            >
+              <Ghost /> Ghostwriter
+            </Button>
+            {current ? (
+              <>
+                <Button size="icon" variant="ghost" title="Move earlier" onClick={() => void moveChapter(current.id, "up")}>
+                  <ArrowUp />
+                </Button>
+                <Button size="icon" variant="ghost" title="Move later" onClick={() => void moveChapter(current.id, "down")}>
+                  <ArrowDown />
+                </Button>
+                <Button size="icon" variant="ghost" title="Delete" onClick={() => void remove(current)}>
+                  <Trash2 />
+                </Button>
+              </>
+            ) : null}
+          </>
         }
       />
       <div className="flex min-h-0 flex-1">
         {chapters === undefined ? null : current ? (
-          <ChapterDesk key={current.id} chapter={current} menu={menu} />
+          <ChapterDesk key={current.id} chapter={current} manuscript={manuscript} menu={menu} ghostwriterOpen={ghostwriterOpen} />
         ) : (
           <>
             <ChapterMenu {...menu} />
@@ -449,6 +535,7 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
                 </Button>
               </div>
             </section>
+            {ghostwriterOpen ? <Ghostwriter manuscript={manuscript} /> : null}
           </>
         )}
       </div>

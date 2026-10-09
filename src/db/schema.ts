@@ -211,7 +211,7 @@ export interface Suggestion {
 }
 
 /** The AI staff: each role of the publishing house. */
-export type AgentRole = "outliner" | "editor" | "proofreader" | "formatter";
+export type AgentRole = "outliner" | "editor" | "proofreader" | "formatter" | "ghostwriter";
 
 /** One message in a conversation with an AI role about a manuscript. */
 export interface AgentMessage {
@@ -226,7 +226,7 @@ export interface AgentMessage {
 
 export type AiProvider = "openai" | "anthropic";
 
-/** The author's own AI key, kept on this machine only. Stored under key "ai". */
+/** The author's own AI key as the AI calls use it: decrypted in memory only, never stored in this form. */
 export interface AiSettings {
   provider: AiProvider;
   apiKey: string;
@@ -236,12 +236,37 @@ export interface AiSettings {
 
 export type ImageProvider = "openai" | "google";
 
-/** The author's own key for an image-generating model (Book Cover workshop), kept on this machine only. Stored under key "imageAi". */
+/** The author's own key for an image-generating model (Book Cover workshop), decrypted in memory only. */
 export interface ImageAiSettings {
   provider: ImageProvider;
   apiKey: string;
   /** Image model name, e.g. "gpt-image-1" or "gemini-2.5-flash-image". */
   model: string;
+}
+
+export type ApiKeyKind = "text" | "image";
+export type ApiKeyStatus = "active" | "revoked";
+
+/**
+ * An API key the author has entered, as it is stored: encrypted with AES-GCM
+ * under a non-extractable key that lives only in this browser database (see
+ * src/lib/keyVault.ts). The plain key is never written to disk. Revoking a key
+ * wipes `secret` and keeps the row listed; deleting removes the row.
+ */
+export interface StoredApiKey {
+  id: Id;
+  /** "text" keys run the AI staff and the Ghostwriter; "image" keys run the Book Cover workshop. */
+  kind: ApiKeyKind;
+  /** An AiProvider for text keys, an ImageProvider for image keys. */
+  provider: string;
+  model: string;
+  /** The last four characters of the key, so it can be recognised in the list. */
+  tail: string;
+  status: ApiKeyStatus;
+  /** The encrypted key. Absent once revoked. */
+  secret?: { iv: Uint8Array; data: Uint8Array };
+  createdAt: Timestamp;
+  revokedAt?: Timestamp;
 }
 
 /** A cover picture made by the Book Cover workshop, kept so the author can compare and choose. */
@@ -262,7 +287,7 @@ export interface CoverConcept {
  */
 export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
 
-/** App-wide preferences as key/value pairs ("ai", "imageAi", "editModels", "activeWorkspaceId", "theme"). */
+/** App-wide preferences as key/value pairs ("editModels", "keyVaultKey", "activeKey:text", "activeKey:image", "activeWorkspaceId", "theme"). */
 export interface Setting {
   key: string;
   value: unknown;
@@ -281,6 +306,7 @@ export class BoxcarDB extends Dexie {
   suggestions!: Table<Suggestion, Id>;
   agentMessages!: Table<AgentMessage, Id>;
   coverConcepts!: Table<CoverConcept, Id>;
+  apiKeys!: Table<StoredApiKey, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -300,6 +326,11 @@ export class BoxcarDB extends Dexie {
     this.version(2).stores({
       coverConcepts: "id, manuscriptId, createdAt",
     });
+    // Version 3 adds the encrypted API keys. Keys saved earlier as plain text are
+    // encrypted and moved here by migrateLegacyKeys() in src/lib/keyVault.ts.
+    this.version(3).stores({
+      apiKeys: "id, kind, status, createdAt",
+    });
   }
 }
 
@@ -316,22 +347,6 @@ export async function getSetting<T>(key: string): Promise<T | undefined> {
 
 export async function setSetting<T>(key: string, value: T): Promise<void> {
   await db.settings.put({ key, value });
-}
-
-export function getAiSettings(): Promise<AiSettings | undefined> {
-  return getSetting<AiSettings>("ai");
-}
-
-export function saveAiSettings(settings: AiSettings): Promise<void> {
-  return setSetting("ai", settings);
-}
-
-export function getImageAiSettings(): Promise<ImageAiSettings | undefined> {
-  return getSetting<ImageAiSettings>("imageAi");
-}
-
-export function saveImageAiSettings(settings: ImageAiSettings): Promise<void> {
-  return setSetting("imageAi", settings);
 }
 
 export async function getEditModels(): Promise<EditModels> {

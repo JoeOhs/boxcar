@@ -26,10 +26,13 @@ A saved copy of a chapter's title and text with a label such as "Before AI edit"
 A proposed edit to a passage in a chapter: the original text, the replacement and a comment explaining why. It comes from the author (`source: user`) or from an AI role (`source: ai`, with `role`), and is pending, accepted or rejected. This is how editing works as a review: nothing from the AI changes the text until the author accepts it.
 
 ## AgentMessage
-One message in the conversation between the author and an AI role (outliner, editor, proofreader or formatter) about a manuscript. It stores the role, whether the author or the agent wrote it, the text and the time. The AI staff are the "publishing company roles"; keeping the history per manuscript lets each role carry on where it left off, including offline (past conversations stay readable without a connection).
+One message in the conversation between the author and an AI role (outliner, editor, proofreader, formatter or ghostwriter) about a manuscript. It stores the role, whether the author or the agent wrote it, the text and the time. The AI staff are the "publishing company roles"; keeping the history per manuscript lets each role carry on where it left off, including offline (past conversations stay readable without a connection).
 
 ## CoverConcept
 One cover picture made by the Book Cover workshop (added in database version 2). It stores the manuscript it belongs to, the prompt sent, the image provider and model, the image itself as a Blob and the time. Concepts are kept so the author can compare them; "Use as cover" copies one onto `Manuscript.cover`.
 
 ## Setting
-A key/value row for app-wide preferences. Key `ai` holds `AiSettings`: provider (OpenAI or Anthropic), the author's own API key and the model name, because the author supplies their own key. Key `imageAi` holds `ImageAiSettings`: the image provider (OpenAI or Google Gemini), the author's own key and the image model, used only by the Book Cover workshop. Other keys are `editModels`, the active workspace and manuscript, and theme. The key is stored in plain text in the browser database on the author's machine and is only sent to the provider chosen.
+A key/value row for app-wide preferences. API keys are no longer kept here: see `ApiKey` below. Keys are `editModels`, `keyVaultKey` (the non-extractable AES-GCM key that encrypts the API keys), `activeKey:text` and `activeKey:image` (which stored key is in use), the active workspace and manuscript, and theme.
+
+## ApiKey (table `apiKeys`)
+One API key the author entered, for the AI staff and Ghostwriter (`kind` "text": OpenAI or Anthropic) or the Book Cover workshop (`kind` "image": OpenAI or Google Gemini). It holds the provider, model, the last four characters, a status (active or revoked), the dates, and `secret`: the key encrypted with AES-GCM. The plain key is never stored. Revoking wipes `secret` and keeps the row; deleting removes it. The decrypted key exists only in memory when a request is sent to the chosen provider.
