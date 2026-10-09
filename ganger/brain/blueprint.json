@@ -102,6 +102,40 @@
       "state": "verified",
       "round": 2,
       "role": "integration"
+    },
+    {
+      "id": "a-book-cover-workshop-for-designing-book-covers",
+      "title": "Book Cover workshop",
+      "aspect": "screen",
+      "serves": [
+        "a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)"
+      ],
+      "files": [
+        {
+          "path": "src/screens/BookCover.tsx",
+          "symbol": "BookCover"
+        }
+      ],
+      "state": "verified",
+      "round": 3,
+      "role": "integration"
+    },
+    {
+      "id": "a-genre-guide-fiction-and-non-fiction-when-creat",
+      "title": "Genre guide for new manuscripts",
+      "aspect": "screen",
+      "serves": [
+        "a genre guide (fiction and non-fiction) when creating a new manuscript"
+      ],
+      "files": [
+        {
+          "path": "src/components/GenrePicker.tsx",
+          "symbol": "GenrePicker"
+        }
+      ],
+      "state": "verified",
+      "round": 3,
+      "role": "integration"
     }
   ],
   "edges": []

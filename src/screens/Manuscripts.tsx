@@ -1,16 +1,20 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, UserRound } from "lucide-react";
 import {
   db,
   deleteManuscript,
   deleteWorkspace,
   type Id,
+  type Manuscript,
   type ManuscriptStatus,
   type Workspace,
 } from "@/db/schema";
+import { genreById } from "@/lib/genres";
 import { createManuscript, patchManuscript, patchWorkspace } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { GenrePicker } from "@/components/GenrePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -89,9 +93,126 @@ function TargetInput({ id, value }: { id: Id; value: number }) {
   );
 }
 
+type Pane = "manuscript" | "new" | "author";
+
+/** The form for a new manuscript: a title and the genre guide. */
+function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
+  const { selectManuscript, navigate } = useApp();
+  const [title, setTitle] = useState("");
+  const [genreId, setGenreId] = useState<string | undefined>(undefined);
+  const [startOutline, setStartOutline] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const genre = genreById(genreId);
+
+  async function create() {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      const created = await createManuscript(workspace, title, genre, startOutline);
+      selectManuscript(created.id);
+      navigate("outline");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="max-w-2xl space-y-4 p-5">
+      <h2 className="font-serif text-lg font-semibold">New manuscript</h2>
+      <div className="space-y-1">
+        <Label htmlFor="new-title">Title</Label>
+        <Input id="new-title" value={title} autoFocus hint="Working title is fine" onChange={(e) => setTitle(e.target.value)} />
+      </div>
+      <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
+      {genre ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={startOutline} onChange={(e) => setStartOutline(e.target.checked)} />
+          <span>
+            Start the outline with the {genre.label.toLowerCase()} structure
+            <span className="block text-xs text-muted-foreground">
+              Also sets a target of {genre.targetWords.toLocaleString()} words and the genre's keywords. You can change both later.
+            </span>
+          </span>
+        </label>
+      ) : null}
+      <div className="flex gap-2">
+        <Button disabled={!title.trim() || busy} onClick={() => void create()}>
+          <Plus /> Create manuscript
+        </Button>
+        {onCancel ? (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+/** The options of the manuscript chosen in the list. */
+function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; words: number }) {
+  const { navigate } = useApp();
+
+  async function remove() {
+    if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
+    await deleteManuscript(manuscript.id);
+  }
+
+  return (
+    <Card className="max-w-2xl space-y-5 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate font-serif text-xl font-semibold">{manuscript.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            {words.toLocaleString()} words
+            {manuscript.targetWordCount ? ` of ${manuscript.targetWordCount.toLocaleString()}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" onClick={() => navigate("outline")}>
+            Open
+          </Button>
+          <Button variant="ghost" size="icon" title="Delete manuscript" onClick={() => void remove()}>
+            <Trash2 />
+          </Button>
+        </div>
+      </div>
+      <div className="grid max-w-md grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label htmlFor="status">Stage</Label>
+          <Select
+            id="status"
+            className="h-8"
+            value={manuscript.status}
+            onChange={(e) => void patchManuscript(manuscript.id, { status: e.target.value as ManuscriptStatus })}
+          >
+            {Object.entries(STATUS_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>Target words</Label>
+          <TargetInput id={manuscript.id} value={manuscript.targetWordCount} />
+        </div>
+      </div>
+      <GenrePicker
+        key={manuscript.id}
+        idPrefix="options"
+        value={manuscript.genre}
+        onChange={(genreId) => void patchManuscript(manuscript.id, { genre: genreId })}
+      />
+    </Card>
+  );
+}
+
 export function Manuscripts() {
-  const { workspace, manuscripts, manuscript, selectManuscript, navigate } = useApp();
-  const [newTitle, setNewTitle] = useState("");
+  const { workspace, manuscripts, manuscript, selectManuscript } = useApp();
+  const [pane, setPane] = useState<Pane>("manuscript");
+  // With no manuscript to show, the right-hand side offers to create one.
+  const shown: Pane = pane === "manuscript" && !manuscript ? "new" : pane;
 
   const wordCounts = useLiveQuery(async () => {
     const counts: Record<Id, number> = {};
@@ -106,107 +227,80 @@ export function Manuscripts() {
     return counts;
   }, [manuscripts.map((m) => m.id).join(",")]);
 
-  async function addManuscript() {
-    if (!workspace || !newTitle.trim()) return;
-    const created = await createManuscript(workspace, newTitle);
-    setNewTitle("");
-    selectManuscript(created.id);
-    navigate("outline");
-  }
-
-  async function removeManuscript(id: Id, title: string) {
-    if (!window.confirm(`Delete "${title}" with all its chapters and outline? This cannot be undone.`)) return;
-    await deleteManuscript(id);
-  }
-
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Manuscripts"
         description={workspace ? `Every book by ${workspace.name}.` : "Every book in this workspace."}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-[20rem_1fr]">
-        <section className="space-y-4">
-          <h2 className="text-sm font-medium">This workspace</h2>
-          {workspace ? <WorkspaceForm key={workspace.id} workspace={workspace} /> : null}
-        </section>
-
-        <section className="space-y-4">
-          <h2 className="text-sm font-medium">Manuscripts</h2>
-          {workspace ? (
-            <form
-              className="flex max-w-md gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void addManuscript();
-              }}
-            >
-              <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} hint="Title of a new manuscript" />
-              <Button type="submit" disabled={!newTitle.trim()}>
-                <Plus /> Create
-              </Button>
-            </form>
-          ) : (
-            <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
-          )}
-
-          <div className="grid gap-3 xl:grid-cols-2">
-            {manuscripts.map((m) => (
-              <Card key={m.id} className={"space-y-3 p-4 " + (m.id === manuscript?.id ? "ring-2 ring-ring/50" : "")}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="truncate font-serif text-lg font-semibold">{m.title}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {(wordCounts?.[m.id] ?? 0).toLocaleString()} words
-                      {m.targetWordCount ? ` of ${m.targetWordCount.toLocaleString()}` : ""}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Delete manuscript"
-                    onClick={() => void removeManuscript(m.id, m.title)}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor={`status-${m.id}`}>Stage</Label>
-                    <Select
-                      id={`status-${m.id}`}
-                      className="h-8"
-                      value={m.status}
-                      onChange={(e) => void patchManuscript(m.id, { status: e.target.value as ManuscriptStatus })}
-                    >
-                      {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Target words</Label>
-                    <TargetInput id={m.id} value={m.targetWordCount} />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      selectManuscript(m.id);
-                      navigate("outline");
-                    }}
-                  >
-                    Open
-                  </Button>
-                </div>
-              </Card>
-            ))}
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex w-72 shrink-0 flex-col border-r border-border">
+          <div className="space-y-2 border-b border-border p-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {workspace ? `${workspace.name}'s manuscripts` : "Manuscripts"}
+            </p>
+            <Button size="sm" className="w-full" disabled={!workspace} onClick={() => setPane("new")}>
+              <Plus /> New manuscript
+            </Button>
           </div>
-          {workspace && manuscripts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No manuscripts in this workspace yet.</p>
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+            {manuscripts.length === 0 ? (
+              <p className="p-2 text-sm text-muted-foreground">No manuscripts in this workspace yet.</p>
+            ) : null}
+            {manuscripts.map((m) => {
+              const active = shown === "manuscript" && m.id === manuscript?.id;
+              const genre = genreById(m.genre);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    selectManuscript(m.id);
+                    setPane("manuscript");
+                  }}
+                  aria-current={active ? "true" : undefined}
+                  className={cn(
+                    "w-full rounded-md px-3 py-2 text-left transition-colors",
+                    active ? "bg-accent" : "hover:bg-accent/50",
+                  )}
+                >
+                  <span className="block truncate font-serif text-sm font-semibold">{m.title}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {(wordCounts?.[m.id] ?? 0).toLocaleString()} words - {STATUS_LABEL[m.status]}
+                    {genre ? ` - ${genre.label}` : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-t border-border p-2">
+            <button
+              onClick={() => setPane("author")}
+              aria-current={shown === "author" ? "true" : undefined}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4",
+                shown === "author" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+            >
+              <UserRound /> About this author
+            </button>
+          </div>
+        </aside>
+
+        <section className="min-w-0 flex-1 overflow-y-auto p-6">
+          {!workspace ? (
+            <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
+          ) : shown === "new" ? (
+            <NewManuscriptForm
+              key="new"
+              workspace={workspace}
+              onCancel={manuscript ? () => setPane("manuscript") : null}
+            />
+          ) : shown === "author" ? (
+            <div className="max-w-xl">
+              <WorkspaceForm key={workspace.id} workspace={workspace} />
+            </div>
+          ) : manuscript ? (
+            <ManuscriptOptions key={manuscript.id} manuscript={manuscript} words={wordCounts?.[manuscript.id] ?? 0} />
           ) : null}
         </section>
       </div>

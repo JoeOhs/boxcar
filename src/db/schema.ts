@@ -78,6 +78,20 @@ export const DEFAULT_FORMAT: FormatSettings = {
   trimSize: "5.5x8.5",
 };
 
+/** The author's brief for the Book Cover workshop, kept with the book so it survives leaving the screen. */
+export interface CoverBrief {
+  /** Id of one of the looks in src/lib/imageAi.ts, e.g. "illustrated". */
+  style: string;
+  /** What the cover should show: the subject, scene or symbol. */
+  subject: string;
+  /** Colours and mood, in the author's words. */
+  palette: string;
+  /** Anything else the image model should know. */
+  extra: string;
+  /** True when the title and author name should be lettered into the artwork itself. */
+  lettering: boolean;
+}
+
 /** One book. Holds the metadata Amazon KDP asks for plus its format settings. */
 export interface Manuscript {
   id: Id;
@@ -92,6 +106,8 @@ export interface Manuscript {
   keywords: string[];
   copyright: string;
   status: ManuscriptStatus;
+  /** Id of the genre chosen for the book (see src/lib/genres.ts), fiction or non-fiction. Absent when none was chosen. */
+  genre?: string;
   /** Target word count for the whole book; 0 = none. */
   targetWordCount: number;
   format: FormatSettings;
@@ -99,6 +115,8 @@ export interface Manuscript {
   editWorkflow?: EditWorkflow;
   /** Cover image (jpeg/png) included in the epub. */
   cover?: Blob;
+  /** What the author last asked the Book Cover workshop for. */
+  coverBrief?: CoverBrief;
   /** When the last export finished, if ever. */
   lastExportedAt?: Timestamp;
   createdAt: Timestamp;
@@ -216,13 +234,35 @@ export interface AiSettings {
   model: string;
 }
 
+export type ImageProvider = "openai" | "google";
+
+/** The author's own key for an image-generating model (Book Cover workshop), kept on this machine only. Stored under key "imageAi". */
+export interface ImageAiSettings {
+  provider: ImageProvider;
+  apiKey: string;
+  /** Image model name, e.g. "gpt-image-1" or "gemini-2.5-flash-image". */
+  model: string;
+}
+
+/** A cover picture made by the Book Cover workshop, kept so the author can compare and choose. */
+export interface CoverConcept {
+  id: Id;
+  manuscriptId: Id;
+  /** The full prompt that was sent to the image model. */
+  prompt: string;
+  provider: ImageProvider;
+  model: string;
+  image: Blob;
+  createdAt: Timestamp;
+}
+
 /**
  * The model the author picked for each editing pass, per provider (a model name
  * only makes sense for the provider it belongs to). Stored under key "editModels".
  */
 export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
 
-/** App-wide preferences as key/value pairs ("ai", "editModels", "activeWorkspaceId", "theme"). */
+/** App-wide preferences as key/value pairs ("ai", "imageAi", "editModels", "activeWorkspaceId", "theme"). */
 export interface Setting {
   key: string;
   value: unknown;
@@ -240,6 +280,7 @@ export class BoxcarDB extends Dexie {
   revisions!: Table<Revision, Id>;
   suggestions!: Table<Suggestion, Id>;
   agentMessages!: Table<AgentMessage, Id>;
+  coverConcepts!: Table<CoverConcept, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -254,6 +295,10 @@ export class BoxcarDB extends Dexie {
       suggestions: "id, chapterId, manuscriptId, status",
       agentMessages: "id, manuscriptId, role, createdAt",
       settings: "key",
+    });
+    // Version 2 adds the Book Cover workshop's pictures.
+    this.version(2).stores({
+      coverConcepts: "id, manuscriptId, createdAt",
     });
   }
 }
@@ -281,6 +326,14 @@ export function saveAiSettings(settings: AiSettings): Promise<void> {
   return setSetting("ai", settings);
 }
 
+export function getImageAiSettings(): Promise<ImageAiSettings | undefined> {
+  return getSetting<ImageAiSettings>("imageAi");
+}
+
+export function saveImageAiSettings(settings: ImageAiSettings): Promise<void> {
+  return setSetting("imageAi", settings);
+}
+
 export async function getEditModels(): Promise<EditModels> {
   return (await getSetting<EditModels>("editModels")) ?? {};
 }
@@ -294,13 +347,14 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
 export function deleteManuscript(manuscriptId: Id): Promise<void> {
   return db.transaction(
     "rw",
-    [db.manuscripts, db.outlineItems, db.chapters, db.revisions, db.suggestions, db.agentMessages],
+    [db.manuscripts, db.outlineItems, db.chapters, db.revisions, db.suggestions, db.agentMessages, db.coverConcepts],
     async () => {
       await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
       await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
       await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
       await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
       await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
+      await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
       await db.manuscripts.delete(manuscriptId);
     },
   );

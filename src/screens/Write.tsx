@@ -4,13 +4,13 @@ import { deleteChapter, type Chapter, type ChapterKind, type ChapterStatus, type
 import { CHAPTER_KIND_LABEL, numberChapters } from "@/lib/chapters";
 import { useChapters } from "@/lib/hooks";
 import {
-  moveSegmentNextTo,
-  newSegment,
-  parseSegments,
-  segmentWords,
-  serializeSegments,
-  type Segment,
-} from "@/lib/segments";
+  moveSceneNextTo,
+  newScene,
+  parseScenes,
+  sceneWords,
+  serializeScenes,
+  type Scene,
+} from "@/lib/scenes";
 import { createChapter, moveChapter, saveChapter } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 const KINDS: ChapterKind[] = ["front", "chapter", "back"];
-const SEGMENT_DRAG_TYPE = "application/x-boxcar-segment";
+const SCENE_DRAG_TYPE = "application/x-boxcar-scene";
 
 interface DragState {
   id: Id;
@@ -31,33 +31,33 @@ interface DragState {
 }
 
 /**
- * The state of the chapter being written: its title and its segments. It is
+ * The state of the chapter being written: its title and its scenes. It is
  * the one place that saves the chapter, so typing, adding, removing and
- * dragging segments (in the menu or in the writing block) can never overwrite
+ * dragging scenes (in the menu or in the writing block) can never overwrite
  * each other. Changes are written to the database shortly after each edit.
  */
 function useChapterDraft(chapter: Chapter) {
-  const [initial] = useState(() => parseSegments(chapter.content));
+  const [initial] = useState(() => parseScenes(chapter.content));
   const [title, setTitle] = useState(chapter.title);
-  const [segments, setSegments] = useState<Segment[]>(initial);
+  const [scenes, setScenes] = useState<Scene[]>(initial);
   const [selectedId, setSelectedId] = useState<Id>(initial[0].id);
   const [saved, setSaved] = useState(true);
   const [drag, setDrag] = useState<DragState | null>(null);
-  const latest = useRef({ title: chapter.title, segments: initial });
+  const latest = useRef({ title: chapter.title, scenes: initial });
   const timer = useRef<number | undefined>(undefined);
   const chapterId = chapter.id;
 
   const flush = useCallback(() => {
     window.clearTimeout(timer.current);
     timer.current = undefined;
-    const { title: t, segments: s } = latest.current;
-    return saveChapter(chapterId, { title: t, content: serializeSegments(s) }).then(() => setSaved(true));
+    const { title: t, scenes: s } = latest.current;
+    return saveChapter(chapterId, { title: t, content: serializeScenes(s) }).then(() => setSaved(true));
   }, [chapterId]);
 
   const commit = useCallback(
-    (nextSegments: Segment[], nextTitle: string = latest.current.title) => {
-      latest.current = { title: nextTitle, segments: nextSegments };
-      setSegments(nextSegments);
+    (nextScenes: Scene[], nextTitle: string = latest.current.title) => {
+      latest.current = { title: nextTitle, scenes: nextScenes };
+      setScenes(nextScenes);
       setTitle(nextTitle);
       setSaved(false);
       window.clearTimeout(timer.current);
@@ -78,9 +78,9 @@ function useChapterDraft(chapter: Chapter) {
     };
   }, [flush]);
 
-  const focusSegment = useCallback((id: Id) => {
+  const focusScene = useCallback((id: Id) => {
     window.setTimeout(() => {
-      const card = document.getElementById(`segment-${id}`);
+      const card = document.getElementById(`scene-${id}`);
       card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       card?.querySelector<HTMLElement>("[contenteditable]")?.focus();
     }, 0);
@@ -89,43 +89,43 @@ function useChapterDraft(chapter: Chapter) {
   const select = useCallback(
     (id: Id, focus: boolean) => {
       setSelectedId(id);
-      if (focus) focusSegment(id);
+      if (focus) focusScene(id);
     },
-    [focusSegment],
+    [focusScene],
   );
 
   const move = useCallback(
     (id: Id, targetId: Id, after: boolean) => {
-      const next = moveSegmentNextTo(latest.current.segments, id, targetId, after);
-      if (next !== latest.current.segments) commit(next);
+      const next = moveSceneNextTo(latest.current.scenes, id, targetId, after);
+      if (next !== latest.current.scenes) commit(next);
     },
     [commit],
   );
 
   return {
     title,
-    segments,
+    scenes,
     selectedId,
     saved,
-    words: segments.reduce((sum, s) => sum + segmentWords(s), 0),
+    words: scenes.reduce((sum, s) => sum + sceneWords(s), 0),
     drag,
-    setTitle: (value: string) => commit(latest.current.segments, value),
-    editSegment: (id: Id, html: string) =>
-      commit(latest.current.segments.map((s) => (s.id === id ? { ...s, html } : s))),
-    renameSegment: (id: Id, value: string) =>
-      commit(latest.current.segments.map((s) => (s.id === id ? { ...s, title: value } : s))),
-    addSegment: (afterId?: Id) => {
-      const created = newSegment();
-      const all = latest.current.segments;
+    setTitle: (value: string) => commit(latest.current.scenes, value),
+    editScene: (id: Id, html: string) =>
+      commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, html } : s))),
+    renameScene: (id: Id, value: string) =>
+      commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, title: value } : s))),
+    addScene: (afterId?: Id) => {
+      const created = newScene();
+      const all = latest.current.scenes;
       const at = afterId ? all.findIndex((s) => s.id === afterId) + 1 : all.length;
       commit([...all.slice(0, at), created, ...all.slice(at)]);
       select(created.id, true);
     },
-    removeSegment: (id: Id) => {
-      const all = latest.current.segments;
+    removeScene: (id: Id) => {
+      const all = latest.current.scenes;
       const target = all.find((s) => s.id === id);
       if (!target || all.length < 2) return;
-      if (segmentWords(target) > 0 && !window.confirm(`Delete "${target.title || "this segment"}" and its text?`)) return;
+      if (sceneWords(target) > 0 && !window.confirm(`Delete "${target.title || "this scene"}" and its text?`)) return;
       const index = all.indexOf(target);
       commit(all.filter((s) => s.id !== id));
       if (selectedId === id) setSelectedId(all[index === 0 ? 1 : index - 1].id);
@@ -146,7 +146,7 @@ function useChapterDraft(chapter: Chapter) {
 
 type ChapterDraft = ReturnType<typeof useChapterDraft>;
 
-/** Drag-and-drop wiring shared by the segment rows in the menu and the segment cards in the writing block. */
+/** Drag-and-drop wiring shared by the scene rows in the menu and the scene cards in the writing block. */
 function dropTargetProps(draft: ChapterDraft, id: Id) {
   return {
     onDragOver: (e: ReactDragEvent<HTMLElement>) => {
@@ -169,7 +169,7 @@ function dragSourceProps(draft: ChapterDraft, id: Id, imageOf?: () => HTMLElemen
     draggable: true,
     onDragStart: (e: ReactDragEvent<HTMLElement>) => {
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData(SEGMENT_DRAG_TYPE, id);
+      e.dataTransfer.setData(SCENE_DRAG_TYPE, id);
       const image = imageOf?.();
       if (image) e.dataTransfer.setDragImage(image, 16, 16);
       // Changing the page inside dragstart can cancel the drag in some browsers.
@@ -185,11 +185,11 @@ function dropMark(draft: ChapterDraft, id: Id): string {
   return drag.after ? "shadow-[0_2px_0_0_var(--color-primary)]" : "shadow-[0_-2px_0_0_var(--color-primary)]";
 }
 
-/** The segments of the open chapter, listed in the left menu. Drag a row to reorder. */
-function SegmentMenu({ draft }: { draft: ChapterDraft }) {
+/** The scenes of the open chapter, listed in the left menu. Drag a row to reorder. */
+function SceneMenu({ draft }: { draft: ChapterDraft }) {
   return (
-    <div className="mb-1 ml-3 space-y-0.5 border-l border-border pl-2" aria-label="Segments of this chapter">
-      {draft.segments.map((s, i) => (
+    <div className="mb-1 ml-3 space-y-0.5 border-l border-border pl-2" aria-label="Scenes of this chapter">
+      {draft.scenes.map((s, i) => (
         <div
           key={s.id}
           role="button"
@@ -208,57 +208,57 @@ function SegmentMenu({ draft }: { draft: ChapterDraft }) {
           )}
         >
           <GripVertical className="size-3 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{s.title || `Segment ${i + 1}`}</span>
-          <span className="shrink-0 text-[10px]">{segmentWords(s).toLocaleString()}</span>
+          <span className="min-w-0 flex-1 truncate">{s.title || `Scene ${i + 1}`}</span>
+          <span className="shrink-0 text-[10px]">{sceneWords(s).toLocaleString()}</span>
         </div>
       ))}
       <button
-        onClick={() => draft.addSegment()}
+        onClick={() => draft.addScene()}
         className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent/50"
       >
-        <Plus className="size-3" /> Add segment
+        <Plus className="size-3" /> Add scene
       </button>
     </div>
   );
 }
 
-function SegmentCard({ draft, segment, index }: { draft: ChapterDraft; segment: Segment; index: number }) {
-  const selected = segment.id === draft.selectedId;
+function SceneCard({ draft, scene, index }: { draft: ChapterDraft; scene: Scene; index: number }) {
+  const selected = scene.id === draft.selectedId;
   return (
     <div
-      id={`segment-${segment.id}`}
-      {...dropTargetProps(draft, segment.id)}
+      id={`scene-${scene.id}`}
+      {...dropTargetProps(draft, scene.id)}
       className={cn(
         "rounded-lg border bg-card transition-shadow",
         selected ? "border-ring ring-2 ring-ring/40" : "border-border",
-        draft.drag?.id === segment.id && "opacity-40",
-        dropMark(draft, segment.id),
+        draft.drag?.id === scene.id && "opacity-40",
+        dropMark(draft, scene.id),
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-2 py-1">
         <span
-          {...dragSourceProps(draft, segment.id, () => document.getElementById(`segment-${segment.id}`))}
-          title="Drag to move this segment"
-          aria-label="Drag to move this segment"
+          {...dragSourceProps(draft, scene.id, () => document.getElementById(`scene-${scene.id}`))}
+          title="Drag to move this scene"
+          aria-label="Drag to move this scene"
           className="cursor-grab rounded p-1 text-muted-foreground hover:bg-accent"
         >
           <GripVertical className="size-4" />
         </span>
         <Input
-          value={segment.title}
-          hint={`Segment ${index + 1}`}
-          aria-label="Segment name"
-          onFocus={() => draft.select(segment.id, false)}
-          onChange={(e) => draft.renameSegment(segment.id, e.target.value)}
+          value={scene.title}
+          hint={`Scene ${index + 1}`}
+          aria-label="Scene name"
+          onFocus={() => draft.select(scene.id, false)}
+          onChange={(e) => draft.renameScene(scene.id, e.target.value)}
           className="h-7 border-0 bg-transparent px-1 text-sm font-medium shadow-none focus-visible:ring-0"
         />
-        <span className="shrink-0 text-xs text-muted-foreground">{segmentWords(segment).toLocaleString()} words</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{sceneWords(scene).toLocaleString()} words</span>
         <Button
           size="icon"
           variant="ghost"
           className="size-7"
-          title="Add a segment below this one"
-          onClick={() => draft.addSegment(segment.id)}
+          title="Add a scene below this one"
+          onClick={() => draft.addScene(scene.id)}
         >
           <Plus />
         </Button>
@@ -266,17 +266,17 @@ function SegmentCard({ draft, segment, index }: { draft: ChapterDraft; segment: 
           size="icon"
           variant="ghost"
           className="size-7"
-          title="Delete this segment"
-          disabled={draft.segments.length < 2}
-          onClick={() => draft.removeSegment(segment.id)}
+          title="Delete this scene"
+          disabled={draft.scenes.length < 2}
+          onClick={() => draft.removeScene(scene.id)}
         >
           <Trash2 />
         </Button>
       </div>
       <EditableHtml
-        initialHtml={segment.html}
-        onChange={(html) => draft.editSegment(segment.id, html)}
-        onFocus={() => draft.select(segment.id, false)}
+        initialHtml={scene.html}
+        onChange={(html) => draft.editScene(scene.id, html)}
+        onFocus={() => draft.select(scene.id, false)}
         className="px-6 py-4"
       />
     </div>
@@ -290,11 +290,11 @@ interface MenuProps {
   onSelect: (id: Id) => void;
   onAdd: (kind: ChapterKind) => void;
   /** Shown under the open chapter. */
-  segmentList?: ReactNode;
+  sceneList?: ReactNode;
 }
 
-/** The left menu: front matter, chapters and back matter, with the open chapter's segments beneath it. */
-function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, segmentList }: MenuProps) {
+/** The left menu: front matter, chapters and back matter, with the open chapter's scenes beneath it. */
+function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, sceneList }: MenuProps) {
   return (
     <aside className="w-64 shrink-0 space-y-4 overflow-y-auto border-r border-border p-3">
       {KINDS.map((kind) => {
@@ -330,7 +330,7 @@ function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, segmentLis
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground">{c.wordCount.toLocaleString()}</span>
                 </button>
-                {c.id === currentId ? segmentList : null}
+                {c.id === currentId ? sceneList : null}
               </div>
             ))}
             {group.length === 0 ? <p className="px-2 text-xs text-muted-foreground">None yet</p> : null}
@@ -341,13 +341,13 @@ function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, segmentLis
   );
 }
 
-/** The open chapter: its menu entry with segments, and the writing block made of segments. */
-function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps, "segmentList"> }) {
+/** The open chapter: its menu entry with scenes, and the writing block made of scenes. */
+function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps, "sceneList"> }) {
   const draft = useChapterDraft(chapter);
 
   return (
     <>
-      <ChapterMenu {...menu} segmentList={<SegmentMenu draft={draft} />} />
+      <ChapterMenu {...menu} sceneList={<SceneMenu draft={draft} />} />
       <section className="min-w-0 flex-1">
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-2">
@@ -358,7 +358,7 @@ function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps
               onChange={(e) => draft.setTitle(e.target.value)}
             />
             <span className="shrink-0 text-xs text-muted-foreground">
-              {draft.segments.length} {draft.segments.length === 1 ? "segment" : "segments"} · {draft.words.toLocaleString()} words ·{" "}
+              {draft.scenes.length} {draft.scenes.length === 1 ? "scene" : "scenes"} · {draft.words.toLocaleString()} words ·{" "}
               {draft.saved ? "Saved" : "Saving..."}
             </span>
             <Select
@@ -375,11 +375,11 @@ function ChapterDesk({ chapter, menu }: { chapter: Chapter; menu: Omit<MenuProps
           <EditorToolbar />
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-2xl space-y-4 px-6 py-6">
-              {draft.segments.map((s, i) => (
-                <SegmentCard key={s.id} draft={draft} segment={s} index={i} />
+              {draft.scenes.map((s, i) => (
+                <SceneCard key={s.id} draft={draft} scene={s} index={i} />
               ))}
-              <Button variant="outline" className="w-full border-dashed" onClick={() => draft.addSegment()}>
-                <Plus /> Add segment
+              <Button variant="outline" className="w-full border-dashed" onClick={() => draft.addScene()}>
+                <Plus /> Add scene
               </Button>
             </div>
           </div>

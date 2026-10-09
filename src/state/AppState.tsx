@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSetting, setSetting, type Id, type Manuscript, type Workspace } from "@/db/schema";
 import { useOnline } from "@/lib/hooks";
 
-export type Screen = "manuscripts" | "outline" | "write" | "edit" | "format" | "export" | "settings";
+export type Screen = "manuscripts" | "outline" | "write" | "edit" | "format" | "cover" | "export" | "settings";
 export type Theme = "light" | "dark";
 
 interface AppState {

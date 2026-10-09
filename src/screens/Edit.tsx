@@ -29,6 +29,7 @@ import {
   useEditModels,
   workflowOf,
 } from "@/lib/editing";
+import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { saveChapter, snapshotChapter } from "@/lib/store";
 import { diffParagraphs, htmlToText, replaceInHtml, textToParagraphs } from "@/lib/text";
@@ -84,6 +85,8 @@ async function bigPicture(manuscript: Manuscript): Promise<string> {
   const sorted = sortChapters(chapters);
   const numbers = numberChapters(sorted);
   const parts = [`Title: ${manuscript.title}`];
+  const genre = genreContext(genreById(manuscript.genre));
+  if (genre) parts.push(genre);
   if (manuscript.description.trim()) parts.push(`Description: ${manuscript.description.trim()}`);
   const outline = outlineLines(items);
   if (outline.length > 0) parts.push(`Outline:\n${outline.join("\n")}`);
@@ -640,7 +643,7 @@ function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manus
               persona={info.persona}
               model={ai && models ? modelForStage(ai.provider, models, stage) : undefined}
               getContext={() =>
-                `Title: ${manuscript.title}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
+                `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
               }
               quickPrompts={QUICK_PROMPTS[stage]}
             />

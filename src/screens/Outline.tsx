@@ -11,10 +11,12 @@ import {
   Trash2,
 } from "lucide-react";
 import { deleteOutlineItem, type Id, type Manuscript, type OutlineItem, type OutlineKind } from "@/db/schema";
+import { genreById, genreContext } from "@/lib/genres";
 import { useOutlineItems } from "@/lib/hooks";
 import { flattenOutline, OUTLINE_KIND_LABEL, outlineToText } from "@/lib/outline";
 import {
   addOutlineItem,
+  applyGenreStructure,
   applyThreeActTemplate,
   chapterForOutlineItem,
   chaptersFromOutline,
@@ -115,6 +117,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const [showAi, setShowAi] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const genre = genreById(manuscript.genre);
   const rows = useMemo(() => flattenOutline(items ?? []), [items]);
   const selected = items?.find((i) => i.id === selectedId);
 
@@ -193,7 +196,14 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {items === undefined ? null : rows.length === 0 ? (
               <div className="space-y-3 p-4 text-sm text-muted-foreground">
-                <p>The outline is empty. Add your first item, or begin with a classic three-act structure.</p>
+                <p>
+                  The outline is empty. Add your first item, or begin with {genre ? "the structure for your genre" : "a classic three-act structure"}.
+                </p>
+                {genre ? (
+                  <Button size="sm" className="mr-2" onClick={() => void applyGenreStructure(manuscript.id, genre)}>
+                    Start with the {genre.label.toLowerCase()} structure
+                  </Button>
+                ) : null}
                 <Button variant="outline" size="sm" onClick={() => void applyThreeActTemplate(manuscript.id)}>
                   Start with three acts
                 </Button>
@@ -240,6 +250,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
               getContext={() =>
                 [
                   `Title: ${manuscript.title}`,
+                  genreContext(genre),
                   manuscript.description ? `Description: ${manuscript.description}` : "",
                   `Outline:\n${outlineToText(items ?? [])}`,
                   selected

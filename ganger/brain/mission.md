@@ -16,6 +16,8 @@ Authors
 - format
 - and export
 - a separate workspace for each author or pen name, chosen or created on the first screen
+- a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)
+- a genre guide (fiction and non-fiction) when creating a new manuscript
 
 ## Shape
 

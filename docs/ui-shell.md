@@ -3,7 +3,7 @@
 Vite + React + Tailwind CSS (v4) + shadcn/ui-style components (copied into `src/components/ui`). There is no router: `App.tsx` shows one screen at a time from a sidebar, and the current screen lives in `AppState`. Everything reads and writes the Dexie database defined in `src/db/schema.ts`; no screen keeps its own copy of the data.
 
 ## Layout (`src/App.tsx`)
-- Left sidebar: pen name (workspace) picker, manuscript picker, the six screens, Settings, a light/dark toggle and an offline notice.
+- Left sidebar: the current workspace (pen name), the screens (Manuscripts, Outline, Write, Edit, Format, Book Cover, Export), then the Workspaces button, Settings with the light/dark toggle, and an offline notice. There is no manuscript drop-down; the manuscript is chosen in the Manuscripts screen.
 - Main area: the current screen. The active workspace, manuscript and the chapter shared by Write and Edit are in `src/state/AppState.tsx`; the first two are saved in the `settings` table (`activeWorkspaceId`, `activeManuscriptId`, `theme`).
 
 ## Screens and the must-have each is for

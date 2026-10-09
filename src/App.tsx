@@ -6,6 +6,7 @@ import {
   Library,
   ListTree,
   Moon,
+  Palette,
   PenLine,
   Settings as SettingsIcon,
   SpellCheck,
@@ -14,7 +15,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApp, type Screen } from "@/state/AppState";
-import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Manuscripts } from "@/screens/Manuscripts";
 import { WorkspaceGate } from "@/screens/WorkspaceGate";
@@ -22,6 +22,7 @@ import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { Outline } from "@/screens/Outline";
 import { Write } from "@/screens/Write";
 import { Edit } from "@/screens/Edit";
+import { BookCover } from "@/screens/BookCover";
 import { Format } from "@/screens/Format";
 import { Export } from "@/screens/Export";
 import { Settings } from "@/screens/Settings";
@@ -32,6 +33,7 @@ const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
   { screen: "write", label: "Write", icon: <PenLine /> },
   { screen: "edit", label: "Edit", icon: <SpellCheck /> },
   { screen: "format", label: "Format", icon: <LayoutTemplate /> },
+  { screen: "cover", label: "Book Cover", icon: <Palette /> },
   { screen: "export", label: "Export", icon: <Download /> },
 ];
 
@@ -47,6 +49,8 @@ function CurrentScreen({ screen }: { screen: Screen }) {
       return <Edit />;
     case "format":
       return <Format />;
+    case "cover":
+      return <BookCover />;
     case "export":
       return <Export />;
     case "settings":
@@ -73,7 +77,7 @@ function NavButton({ screen, label, icon }: { screen: Screen; label: string; ico
 }
 
 export default function App() {
-  const { loading, entered, online, screen, workspace, manuscripts, manuscript, selectManuscript, theme, toggleTheme } = useApp();
+  const { loading, entered, online, screen, workspace, theme, toggleTheme } = useApp();
 
   if (loading) {
     return <div className="p-8 text-sm text-muted-foreground">Opening your library...</div>;
@@ -97,24 +101,6 @@ export default function App() {
               {workspace.name}
             </p>
           </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground" htmlFor="manuscript">
-              Manuscript
-            </label>
-            <Select
-              id="manuscript"
-              value={manuscript?.id ?? ""}
-              onChange={(e) => selectManuscript(e.target.value)}
-              disabled={manuscripts.length === 0}
-            >
-              {manuscripts.length === 0 ? <option value="">No manuscripts</option> : null}
-              {manuscripts.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.title}
-                </option>
-              ))}
-            </Select>
-          </div>
         </div>
 
         <nav className="flex-1 space-y-0.5 px-3 py-2">
@@ -129,6 +115,7 @@ export default function App() {
               <WifiOff className="size-3.5" /> Offline. Your work is saved on this computer.
             </div>
           ) : null}
+          <WorkspaceSwitcher />
           <div className="flex items-center gap-1">
             <div className="flex-1">
               <NavButton screen="settings" label="Settings" icon={<SettingsIcon />} />
@@ -137,7 +124,6 @@ export default function App() {
               {theme === "dark" ? <Sun /> : <Moon />}
             </Button>
           </div>
-          <WorkspaceSwitcher />
         </div>
       </aside>
 

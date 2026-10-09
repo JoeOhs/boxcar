@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "purpose": "I want to create a desktop app for writing books. The idea is that the app is an entire publishing company from draft to ebook - with each role of the company filled by AI agents. The app should be minimalistic and elegant but full of features that you would find in Reedsy or Scrivener. I want to employ workspaces for each author/pen name, so that manuscripts are organized by their respective author/pen name, and I want a built in outline workshop feature that facilitates an environment for building the bones of their manuscript.",
   "principles": [
     {
@@ -61,6 +61,22 @@
       "text": "a separate workspace for each author or pen name, chosen or created on the first screen",
       "acceptance": [
         "A person using the app can: a separate workspace for each author or pen name, chosen or created on the first screen",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-7",
+      "text": "a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)",
+      "acceptance": [
+        "A person using the app can: a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-8",
+      "text": "a genre guide (fiction and non-fiction) when creating a new manuscript",
+      "acceptance": [
+        "A person using the app can: a genre guide (fiction and non-fiction) when creating a new manuscript",
         "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
       ]
     }
@@ -126,6 +142,12 @@
       "at": "2026-10-09T03:39:45.992Z",
       "by": "the foreman, approved by the person",
       "reason": "Round 2: added MH-6 \"a separate workspace for each author or pen name, chosen or created on the first screen\". Separate workspaces for each author are a new thing the app must do. The segment, editing-pass and AI-formatting requests change how writing, editing and formatting work, so they don't need new must-haves."
+    },
+    {
+      "version": 3,
+      "at": "2026-10-09T04:14:05.835Z",
+      "by": "the foreman, approved by the person",
+      "reason": "Round 3: added MH-7 \"a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)\", added MH-8 \"a genre guide (fiction and non-fiction) when creating a new manuscript\". Most of these changes only adjust how the app works, but the Book Cover workshop and the genre guide for new manuscripts are new things the app must do, so I've added them as must-haves."
     }
   ]
 }

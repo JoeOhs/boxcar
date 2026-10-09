@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, KeyRound } from "lucide-react";
-import { getAiSettings, saveAiSettings, type AiProvider, type AiSettings } from "@/db/schema";
+import { Check, ImageIcon, KeyRound } from "lucide-react";
+import {
+  getAiSettings,
+  getImageAiSettings,
+  saveAiSettings,
+  saveImageAiSettings,
+  type AiProvider,
+  type AiSettings,
+  type ImageAiSettings,
+  type ImageProvider,
+} from "@/db/schema";
 import { askAi, DEFAULT_MODEL, PROVIDER_LABEL } from "@/lib/ai";
+import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDER_LABEL } from "@/lib/imageAi";
 import { useOnline } from "@/lib/hooks";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
@@ -102,15 +112,87 @@ function AiKeyForm({ saved }: { saved: AiSettings | null }) {
   );
 }
 
+function ImageKeyForm({ saved }: { saved: ImageAiSettings | null }) {
+  const [provider, setProvider] = useState<ImageProvider>(saved?.provider ?? "openai");
+  const [apiKey, setApiKey] = useState(saved?.apiKey ?? "");
+  const [model, setModel] = useState(saved?.model ?? DEFAULT_IMAGE_MODEL[saved?.provider ?? "openai"]);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function changeProvider(next: ImageProvider) {
+    // Swap the model only if the author has not typed their own.
+    if (model === DEFAULT_IMAGE_MODEL[provider]) setModel(DEFAULT_IMAGE_MODEL[next]);
+    setProvider(next);
+    setMessage(null);
+  }
+
+  async function save() {
+    const key = apiKey.trim();
+    await saveImageAiSettings({ provider, apiKey: key, model: model.trim() || DEFAULT_IMAGE_MODEL[provider] });
+    setMessage(key ? "Saved on this computer." : "Key removed.");
+  }
+
+  return (
+    <Card className="max-w-xl space-y-4 p-5">
+      <div className="flex items-center gap-2">
+        <ImageIcon className="size-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium">Book Cover image AI</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        The Book Cover workshop makes pictures with an image-generating model, so it needs a key from a provider that
+        offers one. This is separate from the AI staff key above, because not every text provider makes images. The key
+        is stored only on this computer. Each picture is billed by the provider to your account.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label htmlFor="img-provider">Provider</Label>
+          <Select id="img-provider" value={provider} onChange={(e) => changeProvider(e.target.value as ImageProvider)}>
+            {(Object.keys(IMAGE_PROVIDER_LABEL) as ImageProvider[]).map((p) => (
+              <option key={p} value={p}>
+                {IMAGE_PROVIDER_LABEL[p]}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="img-model">Image model</Label>
+          <Input id="img-model" value={model} onChange={(e) => setModel(e.target.value)} />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="img-key">{IMAGE_PROVIDER_LABEL[provider]} API key</Label>
+        <Input
+          id="img-key"
+          type="password"
+          autoComplete="off"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          hint={provider === "openai" ? "sk-..." : "AIza..."}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button onClick={() => void save()}>Save</Button>
+      </div>
+      {message ? (
+        <p className="flex items-center gap-1.5 text-sm text-success">
+          <Check className="size-4" />
+          {message}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
 export function Settings() {
   // undefined while loading; null when nothing has been saved yet.
   const saved = useLiveQuery(async () => (await getAiSettings()) ?? null, []);
+  const savedImage = useLiveQuery(async () => (await getImageAiSettings()) ?? null, []);
 
   return (
     <div className="flex h-full flex-col">
-      <ScreenHeader title="Settings" description="Your AI key for the AI staff, and where your data lives." />
+      <ScreenHeader title="Settings" description="Your AI keys for the AI staff and the Book Cover workshop, and where your data lives." />
       <div className="space-y-6 overflow-y-auto p-6">
         {saved === undefined ? null : <AiKeyForm saved={saved} />}
+        {savedImage === undefined ? null : <ImageKeyForm saved={savedImage} />}
         <Card className="max-w-xl space-y-2 p-5">
           <h2 className="text-sm font-medium">Your data</h2>
           <p className="text-sm text-muted-foreground">

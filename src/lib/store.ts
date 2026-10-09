@@ -13,6 +13,7 @@ import {
   type Workspace,
 } from "@/db/schema";
 import { sortChapters } from "./chapters";
+import type { Genre } from "./genres";
 import { childKind } from "./outline";
 import { countWords } from "./text";
 
@@ -37,7 +38,17 @@ export async function patchWorkspace(id: Id, changes: Partial<Omit<Workspace, "i
   await db.workspaces.update(id, { ...changes, updatedAt: Date.now() });
 }
 
-export async function createManuscript(workspace: Workspace, title: string): Promise<Manuscript> {
+/**
+ * Creates a book in a workspace. With a genre from the genre guide the book starts
+ * with that genre, its target length and its suggested keywords; `startOutline`
+ * also fills the outline with the genre's structure.
+ */
+export async function createManuscript(
+  workspace: Workspace,
+  title: string,
+  genre?: Genre,
+  startOutline = false,
+): Promise<Manuscript> {
   const now = Date.now();
   const manuscript: Manuscript = {
     id: newId(),
@@ -50,12 +61,15 @@ export async function createManuscript(workspace: Workspace, title: string): Pro
     keywords: [],
     copyright: `Copyright © ${new Date().getFullYear()} ${workspace.name}. All rights reserved.`,
     status: "outlining",
-    targetWordCount: 0,
+    genre: genre?.id,
+    targetWordCount: genre?.targetWords ?? 0,
     format: { ...DEFAULT_FORMAT },
     createdAt: now,
     updatedAt: now,
   };
+  if (genre) manuscript.keywords = genre.keywords.slice(0, 7);
   await db.manuscripts.add(manuscript);
+  if (genre && startOutline) await applyGenreStructure(manuscript.id, genre);
   return manuscript;
 }
 
@@ -150,40 +164,46 @@ export async function moveOutlineItem(
   }
 }
 
-const THREE_ACTS: { title: string; beats: string[] }[] = [
-  { title: "Act I: Setup", beats: ["Opening image", "Inciting incident", "First plot point"] },
-  { title: "Act II: Confrontation", beats: ["Rising action", "Midpoint", "Crisis"] },
-  { title: "Act III: Resolution", beats: ["Climax", "Resolution"] },
+const THREE_ACTS: { title: string; points: string[] }[] = [
+  { title: "Act I: Setup", points: ["Opening image", "Inciting incident", "First plot point"] },
+  { title: "Act II: Confrontation", points: ["Rising action", "Midpoint", "Crisis"] },
+  { title: "Act III: Resolution", points: ["Climax", "Resolution"] },
 ];
 
-/** Fills an empty outline with the classic three-act structure. */
-export async function applyThreeActTemplate(manuscriptId: Id): Promise<void> {
+/** Adds a set of top-level parts, each with its points as beats beneath it, after anything already in the outline. */
+async function addOutlineParts(
+  manuscriptId: Id,
+  parts: { title: string; points: string[] }[],
+  partKind: OutlineKind,
+): Promise<void> {
+  const existing = await db.outlineItems.where("manuscriptId").equals(manuscriptId).filter((i) => i.parentId === null).toArray();
+  const firstOrder = existing.length ? Math.max(...existing.map((i) => i.order)) + 1 : 0;
   const now = Date.now();
   const items: OutlineItem[] = [];
-  THREE_ACTS.forEach((act, actIndex) => {
-    const actId = newId();
+  parts.forEach((part, partIndex) => {
+    const partId = newId();
     items.push({
-      id: actId,
+      id: partId,
       manuscriptId,
       parentId: null,
-      kind: "act",
-      title: act.title,
+      kind: partKind,
+      title: part.title,
       summary: "",
       notes: "",
-      order: actIndex,
+      order: firstOrder + partIndex,
       createdAt: now,
       updatedAt: now,
     });
-    act.beats.forEach((beat, beatIndex) => {
+    part.points.forEach((point, pointIndex) => {
       items.push({
         id: newId(),
         manuscriptId,
-        parentId: actId,
+        parentId: partId,
         kind: "beat",
-        title: beat,
+        title: point,
         summary: "",
         notes: "",
-        order: beatIndex,
+        order: pointIndex,
         createdAt: now,
         updatedAt: now,
       });
@@ -192,6 +212,19 @@ export async function applyThreeActTemplate(manuscriptId: Id): Promise<void> {
   await db.outlineItems.bulkAdd(items);
 }
 
+/** Fills an empty outline with the classic three-act structure. */
+export function applyThreeActTemplate(manuscriptId: Id): Promise<void> {
+  return addOutlineParts(manuscriptId, THREE_ACTS, "act");
+}
+
+/**
+ * Fills the outline with the structure from the genre guide: acts with beats for
+ * fiction, chapters with key points for non-fiction (so "Create chapters from
+ * outline" turns a non-fiction structure straight into chapters to write).
+ */
+export function applyGenreStructure(manuscriptId: Id, genre: Genre): Promise<void> {
+  return addOutlineParts(manuscriptId, genre.structure, genre.category === "fiction" ? "act" : "chapter");
+}
 // ---------------------------------------------------------------------------
 // Chapters
 // ---------------------------------------------------------------------------

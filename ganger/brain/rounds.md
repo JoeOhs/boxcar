@@ -25,8 +25,26 @@ Each editing phase should utilize a different model chosen by the user.
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 22271338f3
 - Cost: $2.39
 
 - Integration: All four changes from the feedback are in. `tsc --noEmit` passes and `vite build` succeeds. I haven't run the app in a browser, so drag and drop and the AI calls are untested at runtime. (22 files)
+
+## Round 3: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Create or choose a workspace" (src/screens/WorkspaceGate.tsx · WorkspaceGate), the div "Boxcar Studio Start by creating a workspace for an author..." on /: There needs to be a option for selecting an already created workspace just below the "create a workspace" section. If a user has created a workspace/s already, they should see a list of workspaces below the "create a workspace" section
+2. On /, the label "MANUSCRIPT": Theres no need to have multiple manuscript options. remove the manuscript drop-down menu.
+3. On /, the div "This workspace Author / pen name About this author Delete...": an authors list of manuscripts should be listed on the left hand side of the workspace and selecting a manuscript opens the options on the right
+4. On /, the button "Workspaces": move this above the settings and dark/light mode
+5. In "Writing desk" (src/screens/Write.tsx · Write), the button "Segment 1 0" on /: change the use of "Segments" to "Scenes"
+6. On /, the div "respect 0 words Stage Outlining Drafting Editing Formatti...": When creating a new manuscript there should be a menu that gives the user the ability to guide the manuscript by genre both fiction and non-fiction
+7. On /, the menu "Manuscripts Outline Write Edit Format Export": I want to add a section for "Book Cover", that opens up a workshop for developing book covers, utilizing image generating AI models. Must have an image generating compatible API key.
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $2.05
+
+- Integration: All seven changes from the feedback are done. `tsc --noEmit` passes and `vite build` succeeds. I haven't run the app in a browser, and the image calls to OpenAI and Google are untested against the real services. (20 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

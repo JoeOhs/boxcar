@@ -10,12 +10,14 @@ It must do these on day one:
 - format
 - and export
 - a separate workspace for each author or pen name, chosen or created on the first screen
+- a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)
+- a genre guide (fiction and non-fiction) when creating a new manuscript
 
 Stack: Content / publishing. 6 override(s), each with its reason, are in ganger/brain/decisions.md.
 
 Latest rounds:
-- Round 1: finished, and the checks passed
 - Round 2: asked for "Changes pinned on the running app:"; finished, and the checks passed
+- Round 3: asked for "Changes pinned on the running app:"; finished, and the checks passed
 
 Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md, rounds.md and notes.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks. notes.md is written by the person who asked for this app, and it wins over everything else here.
 
