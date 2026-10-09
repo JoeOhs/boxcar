@@ -17,13 +17,14 @@ Vite + React + Tailwind CSS (v4) + shadcn/ui-style components (copied into `src/
 | `src/screens/Export.tsx` | MH-5 and export | Fill in the KDP book details and cover, see a readiness checklist, and export an EPUB 3 file for Amazon KDP | `manuscripts`, `chapters` |
 
 Supporting screens (not must-haves on their own):
-- `src/screens/Workspaces.tsx`: create, rename and delete pen names; create, open and delete manuscripts under each; set stage and target word count. This is the "workspace for each author/pen name" idea.
+- `src/screens/WorkspaceGate.tsx`: the first screen. Choose an author/pen name workspace or create one; nothing else is shown until then. `src/components/WorkspaceSwitcher.tsx` is the "Workspaces" button at the bottom of the left menu (switch or add a workspace).
+- `src/screens/Manuscripts.tsx`: rename and delete the open workspace; create, open and delete manuscripts in it; set stage and target word count.
 - `src/screens/Settings.tsx`: the author's own AI provider (OpenAI or Anthropic), key and model, saved with `saveAiSettings` and tested on request.
 
 ## Supporting code
 - `src/lib/store.ts`: write operations (create/patch workspaces, manuscripts, outline items, chapters, snapshots).
 - `src/lib/epub.ts`: `buildEpub` (EPUB 3 + NCX, cover, TOC, KDP metadata via JSZip), `buildCss` and `buildPreviewDocument` (shared by preview and export).
-- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestEdits`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`.
+- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestStageReview`, `requestFormatPreset`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`.
 - `src/lib/text.ts`, `chapters.ts`, `outline.ts`, `hooks.ts`, `download.ts`: helpers.
 - `public/sw.js` and `public/manifest.webmanifest`: let the built app open with no connection.
 

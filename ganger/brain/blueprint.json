@@ -85,6 +85,23 @@
       "state": "verified",
       "round": 1,
       "role": "integration"
+    },
+    {
+      "id": "a-separate-workspace-for-each-author-or-pen-name",
+      "title": "Create or choose a workspace",
+      "aspect": "screen",
+      "serves": [
+        "a separate workspace for each author or pen name, chosen or created on the first screen"
+      ],
+      "files": [
+        {
+          "path": "src/screens/WorkspaceGate.tsx",
+          "symbol": "WorkspaceGate"
+        }
+      ],
+      "state": "verified",
+      "round": 2,
+      "role": "integration"
     }
   ],
   "edges": []

@@ -9,7 +9,7 @@ import {
   type ManuscriptStatus,
   type Workspace,
 } from "@/db/schema";
-import { createManuscript, createWorkspace, patchManuscript, patchWorkspace } from "@/lib/store";
+import { createManuscript, patchManuscript, patchWorkspace } from "@/lib/store";
 import { useApp } from "@/state/AppState";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
@@ -89,9 +89,8 @@ function TargetInput({ id, value }: { id: Id; value: number }) {
   );
 }
 
-export function Workspaces() {
-  const { workspaces, workspace, manuscripts, manuscript, selectWorkspace, selectManuscript, navigate } = useApp();
-  const [newPenName, setNewPenName] = useState("");
+export function Manuscripts() {
+  const { workspace, manuscripts, manuscript, selectManuscript, navigate } = useApp();
   const [newTitle, setNewTitle] = useState("");
 
   const wordCounts = useLiveQuery(async () => {
@@ -106,13 +105,6 @@ export function Workspaces() {
       });
     return counts;
   }, [manuscripts.map((m) => m.id).join(",")]);
-
-  async function addWorkspace() {
-    if (!newPenName.trim()) return;
-    const created = await createWorkspace(newPenName);
-    setNewPenName("");
-    selectWorkspace(created.id);
-  }
 
   async function addManuscript() {
     if (!workspace || !newTitle.trim()) return;
@@ -130,46 +122,17 @@ export function Workspaces() {
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
-        title="Workspaces"
-        description="One workspace for each author or pen name. Every manuscript lives in one."
+        title="Manuscripts"
+        description={workspace ? `Every book by ${workspace.name}.` : "Every book in this workspace."}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-[20rem_1fr]">
         <section className="space-y-4">
-          <h2 className="text-sm font-medium">Pen names</h2>
-          <div className="space-y-1">
-            {workspaces.map((w) => (
-              <button
-                key={w.id}
-                onClick={() => selectWorkspace(w.id)}
-                className={
-                  "flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors " +
-                  (w.id === workspace?.id ? "bg-accent font-medium" : "hover:bg-accent/60")
-                }
-              >
-                {w.name}
-              </button>
-            ))}
-            {workspaces.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Start by adding the name you publish under.</p>
-            ) : null}
-          </div>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void addWorkspace();
-            }}
-          >
-            <Input value={newPenName} onChange={(e) => setNewPenName(e.target.value)} hint="New pen name" />
-            <Button type="submit" size="icon" title="Add pen name" disabled={!newPenName.trim()}>
-              <Plus />
-            </Button>
-          </form>
+          <h2 className="text-sm font-medium">This workspace</h2>
           {workspace ? <WorkspaceForm key={workspace.id} workspace={workspace} /> : null}
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-medium">{workspace ? `Manuscripts by ${workspace.name}` : "Manuscripts"}</h2>
+          <h2 className="text-sm font-medium">Manuscripts</h2>
           {workspace ? (
             <form
               className="flex max-w-md gap-2"
@@ -184,7 +147,7 @@ export function Workspaces() {
               </Button>
             </form>
           ) : (
-            <p className="text-sm text-muted-foreground">Add a pen name first, then create manuscripts under it.</p>
+            <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
           )}
 
           <div className="grid gap-3 xl:grid-cols-2">
@@ -243,7 +206,7 @@ export function Workspaces() {
             ))}
           </div>
           {workspace && manuscripts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No manuscripts under this pen name yet.</p>
+            <p className="text-sm text-muted-foreground">No manuscripts in this workspace yet.</p>
           ) : null}
         </section>
       </div>

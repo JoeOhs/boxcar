@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "purpose": "I want to create a desktop app for writing books. The idea is that the app is an entire publishing company from draft to ebook - with each role of the company filled by AI agents. The app should be minimalistic and elegant but full of features that you would find in Reedsy or Scrivener. I want to employ workspaces for each author/pen name, so that manuscripts are organized by their respective author/pen name, and I want a built in outline workshop feature that facilitates an environment for building the bones of their manuscript.",
   "principles": [
     {
@@ -53,6 +53,14 @@
       "text": "and export",
       "acceptance": [
         "A person using the app can: and export",
+        "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
+      ]
+    },
+    {
+      "id": "MH-6",
+      "text": "a separate workspace for each author or pen name, chosen or created on the first screen",
+      "acceptance": [
+        "A person using the app can: a separate workspace for each author or pen name, chosen or created on the first screen",
         "Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left."
       ]
     }
@@ -112,6 +120,12 @@
       "at": "2026-10-09T02:23:57.174Z",
       "by": "Ganger",
       "reason": "Written from the brief and the stack decision, before any journeyman ran."
+    },
+    {
+      "version": 2,
+      "at": "2026-10-09T03:39:45.992Z",
+      "by": "the foreman, approved by the person",
+      "reason": "Round 2: added MH-6 \"a separate workspace for each author or pen name, chosen or created on the first screen\". Separate workspaces for each author are a new thing the app must do. The segment, editing-pass and AI-formatting requests change how writing, editing and formatting work, so they don't need new must-haves."
     }
   ]
 }

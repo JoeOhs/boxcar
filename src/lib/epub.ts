@@ -53,6 +53,10 @@ nav a { text-decoration: none; color: inherit; }
 export function toXhtmlBody(html: string, sceneBreak: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   doc.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach((node) => node.remove());
+  // Writing segments are an authoring aid; in the book their text simply runs on.
+  doc.querySelectorAll("section[data-segment]").forEach((segment) => {
+    segment.replaceWith(...Array.from(segment.childNodes));
+  });
   doc.querySelectorAll("hr").forEach((rule) => {
     const p = doc.createElement("p");
     p.className = "scenebreak";

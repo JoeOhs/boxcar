@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import {
   BookOpen,
   Download,
-  FolderOpen,
   LayoutTemplate,
+  Library,
   ListTree,
   Moon,
   PenLine,
@@ -16,7 +16,9 @@ import { cn } from "@/lib/utils";
 import { useApp, type Screen } from "@/state/AppState";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Workspaces } from "@/screens/Workspaces";
+import { Manuscripts } from "@/screens/Manuscripts";
+import { WorkspaceGate } from "@/screens/WorkspaceGate";
+import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { Outline } from "@/screens/Outline";
 import { Write } from "@/screens/Write";
 import { Edit } from "@/screens/Edit";
@@ -25,7 +27,7 @@ import { Export } from "@/screens/Export";
 import { Settings } from "@/screens/Settings";
 
 const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
-  { screen: "workspaces", label: "Workspaces", icon: <FolderOpen /> },
+  { screen: "manuscripts", label: "Manuscripts", icon: <Library /> },
   { screen: "outline", label: "Outline", icon: <ListTree /> },
   { screen: "write", label: "Write", icon: <PenLine /> },
   { screen: "edit", label: "Edit", icon: <SpellCheck /> },
@@ -35,8 +37,8 @@ const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
 
 function CurrentScreen({ screen }: { screen: Screen }) {
   switch (screen) {
-    case "workspaces":
-      return <Workspaces />;
+    case "manuscripts":
+      return <Manuscripts />;
     case "outline":
       return <Outline />;
     case "write":
@@ -71,8 +73,14 @@ function NavButton({ screen, label, icon }: { screen: Screen; label: string; ico
 }
 
 export default function App() {
-  const { loading, online, screen, workspaces, workspace, manuscripts, manuscript, selectWorkspace, selectManuscript, theme, toggleTheme } =
-    useApp();
+  const { loading, entered, online, screen, workspace, manuscripts, manuscript, selectManuscript, theme, toggleTheme } = useApp();
+
+  if (loading) {
+    return <div className="p-8 text-sm text-muted-foreground">Opening your library...</div>;
+  }
+
+  // The first screen: pick or create a workspace before anything else is shown.
+  if (!entered || !workspace) return <WorkspaceGate />;
 
   return (
     <div className="flex h-full">
@@ -84,22 +92,10 @@ export default function App() {
 
         <div className="space-y-2 px-4 pb-3">
           <div>
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground" htmlFor="pen-name">
-              Pen name
-            </label>
-            <Select
-              id="pen-name"
-              value={workspace?.id ?? ""}
-              onChange={(e) => selectWorkspace(e.target.value)}
-              disabled={workspaces.length === 0}
-            >
-              {workspaces.length === 0 ? <option value="">No workspaces</option> : null}
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </Select>
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workspace</p>
+            <p className="truncate rounded-md bg-accent px-3 py-2 font-serif text-sm font-semibold" title={workspace.name}>
+              {workspace.name}
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground" htmlFor="manuscript">
@@ -141,11 +137,12 @@ export default function App() {
               {theme === "dark" ? <Sun /> : <Moon />}
             </Button>
           </div>
+          <WorkspaceSwitcher />
         </div>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-hidden">
-        {loading ? <div className="p-8 text-sm text-muted-foreground">Opening your library...</div> : <CurrentScreen screen={screen} />}
+        <CurrentScreen screen={screen} />
       </main>
     </div>
   );

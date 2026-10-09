@@ -11,7 +11,7 @@ export function escapeHtml(value: string): string {
 export function htmlToText(html: string): string {
   const spaced = html
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|h[1-6]|li|blockquote)>/gi, "$&\n")
+    .replace(/<\/(p|div|section|h[1-6]|li|blockquote)>/gi, "$&\n")
     .replace(/<hr\s*\/?>/gi, "\n* * *\n");
   const doc = new DOMParser().parseFromString(spaced, "text/html");
   return (doc.body.textContent ?? "").replace(/\u00a0/g, " ").trim();

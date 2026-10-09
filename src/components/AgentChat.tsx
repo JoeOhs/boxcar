@@ -15,12 +15,16 @@ interface Props {
   getContext: () => string;
   /** Ready-made questions shown as buttons. */
   quickPrompts?: { label: string; prompt: string }[];
+  /** Replaces the role's usual brief, e.g. for one editing pass. */
+  persona?: string;
+  /** Model to use instead of the one chosen in Settings, e.g. the model picked for an editing pass. */
+  model?: string;
   /** Optional button on each reply, e.g. to copy it into the outline notes. */
   onUseReply?: { label: string; run: (text: string) => void };
 }
 
 /** A conversation with one AI role, saved per manuscript so it can be read offline. */
-export function AgentChat({ manuscriptId, role, getContext, quickPrompts, onUseReply }: Props) {
+export function AgentChat({ manuscriptId, role, getContext, persona, model, quickPrompts, onUseReply }: Props) {
   const { navigate } = useApp();
   const ai = useAiSettings();
   const online = useOnline();
@@ -63,7 +67,7 @@ export function AgentChat({ manuscriptId, role, getContext, quickPrompts, onUseR
         content: m.text,
       }));
       while (turns.length > 0 && turns[0].role !== "user") turns.shift();
-      const reply = await askAi(ai, systemPrompt(role, getContext()), turns);
+      const reply = await askAi(model ? { ...ai, model } : ai, systemPrompt(role, getContext(), persona), turns);
       await db.agentMessages.add({
         id: newId(),
         manuscriptId,

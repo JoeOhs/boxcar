@@ -15,6 +15,7 @@ Authors
 - edit
 - format
 - and export
+- a separate workspace for each author or pen name, chosen or created on the first screen
 
 ## Shape
 

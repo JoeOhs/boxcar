@@ -30,6 +30,19 @@ export interface Workspace {
 
 export type ManuscriptStatus = "outlining" | "drafting" | "editing" | "formatting" | "ready";
 
+/** The four passes of the editing workflow, in the order they are done. */
+export type EditStage = "developmental" | "line" | "copy" | "proofread";
+
+/** Where a manuscript is in the editing workflow. */
+export interface EditWorkflow {
+  /** The pass being worked on. */
+  stage: EditStage;
+  /** Passes the author has finished. A pass opens only when the ones before it are finished. */
+  completed: EditStage[];
+  /** The style guide the copy edit checks against, e.g. "Chicago Manual of Style". */
+  styleGuide: string;
+}
+
 export type TrimSize = "5x8" | "5.25x8" | "5.5x8.5" | "6x9";
 export type ParagraphStyle = "indent" | "block";
 export type HeadingStyle = "plain" | "numbered" | "numbered-with-title";
@@ -82,6 +95,8 @@ export interface Manuscript {
   /** Target word count for the whole book; 0 = none. */
   targetWordCount: number;
   format: FormatSettings;
+  /** Progress through developmental, line, copy and proofreading passes. Absent until the first pass is touched. */
+  editWorkflow?: EditWorkflow;
   /** Cover image (jpeg/png) included in the epub. */
   cover?: Blob;
   /** When the last export finished, if ever. */
@@ -150,6 +165,8 @@ export interface Revision {
 
 export type SuggestionSource = "user" | "ai";
 export type SuggestionStatus = "pending" | "accepted" | "rejected";
+/** A "change" replaces a passage; a "note" is feedback with nothing to replace (structural comments). */
+export type SuggestionKind = "change" | "note";
 
 /**
  * An edit proposed for a passage of a chapter: replace `original` with
@@ -163,7 +180,11 @@ export interface Suggestion {
   source: SuggestionSource;
   /** Which AI role produced it, when source is "ai". */
   role?: AgentRole;
-  /** The exact passage the suggestion applies to (matched as text). */
+  /** The editing pass it was made in. Absent on suggestions made before the workflow existed. */
+  stage?: EditStage;
+  /** Absent means "change". */
+  kind?: SuggestionKind;
+  /** The exact passage the suggestion applies to (matched as text). Empty for a note on the whole chapter. */
   original: string;
   replacement: string;
   comment: string;
@@ -195,7 +216,13 @@ export interface AiSettings {
   model: string;
 }
 
-/** App-wide preferences as key/value pairs ("ai", "activeWorkspaceId", "theme"). */
+/**
+ * The model the author picked for each editing pass, per provider (a model name
+ * only makes sense for the provider it belongs to). Stored under key "editModels".
+ */
+export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
+
+/** App-wide preferences as key/value pairs ("ai", "editModels", "activeWorkspaceId", "theme"). */
 export interface Setting {
   key: string;
   value: unknown;
@@ -252,6 +279,15 @@ export function getAiSettings(): Promise<AiSettings | undefined> {
 
 export function saveAiSettings(settings: AiSettings): Promise<void> {
   return setSetting("ai", settings);
+}
+
+export async function getEditModels(): Promise<EditModels> {
+  return (await getSetting<EditModels>("editModels")) ?? {};
+}
+
+export async function saveEditModel(provider: AiProvider, stage: EditStage, model: string): Promise<void> {
+  const all = await getEditModels();
+  await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [stage]: model } });
 }
 
 /** Delete a manuscript and everything that belongs to it. */

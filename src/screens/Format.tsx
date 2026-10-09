@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Sparkles } from "lucide-react";
 import { DEFAULT_FORMAT, type FormatSettings, type HeadingStyle, type Manuscript, type ParagraphStyle, type TrimSize } from "@/db/schema";
 import { AgentChat } from "@/components/AgentChat";
 import { NoManuscript } from "@/components/NoManuscript";
@@ -7,9 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { requestFormatPreset, useAiSettings } from "@/lib/ai";
 import { buildPreviewDocument, FONT_CHOICES, TRIM_SIZES } from "@/lib/epub";
-import { useChapters } from "@/lib/hooks";
+import { FORMAT_PRESETS, presetById, presetMatching } from "@/lib/formatPresets";
+import { useChapters, useOnline } from "@/lib/hooks";
 import { patchManuscript } from "@/lib/store";
+import { htmlToText } from "@/lib/text";
+import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 
 const SCENE_BREAKS = ["* * *", "***", "---", "~", "◆"];
@@ -24,16 +29,51 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; 
 }
 
 function FormatBody({ manuscript }: { manuscript: Manuscript }) {
-  const { workspace } = useApp();
+  const { workspace, navigate } = useApp();
+  const ai = useAiSettings();
+  const online = useOnline();
   const chapters = useChapters(manuscript.id);
   // Settings are kept locally while the author drags a control, and written through to the manuscript.
   const [fmt, setFmt] = useState<FormatSettings>(manuscript.format);
   const [showAi, setShowAi] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [choice, setChoice] = useState<{ ok: boolean; text: string } | null>(null);
+  const preset = presetMatching(fmt);
 
   function change(changes: Partial<FormatSettings>) {
     const next = { ...fmt, ...changes };
     setFmt(next);
     void patchManuscript(manuscript.id, { format: next });
+  }
+
+  /** Asks the AI formatter to pick the preset that suits this book, and applies it. */
+  async function chooseWithAi() {
+    if (!ai) return;
+    setChoosing(true);
+    setChoice(null);
+    try {
+      const all = chapters ?? [];
+      const body = all.filter((c) => c.kind === "chapter");
+      const first = body[0] ?? all[0];
+      const picked = await requestFormatPreset(ai, {
+        title: manuscript.title,
+        subtitle: manuscript.subtitle,
+        description: manuscript.description,
+        keywords: manuscript.keywords,
+        wordCount: all.reduce((sum, c) => sum + c.wordCount, 0),
+        chapterCount: body.length,
+        sample: first ? htmlToText(first.content) : "",
+      });
+      change({ ...picked.preset.settings });
+      setChoice({
+        ok: true,
+        text: `The AI chose "${picked.preset.label}"${picked.reason ? `: ${picked.reason}` : "."} You can still change any setting below.`,
+      });
+    } catch (e) {
+      setChoice({ ok: false, text: e instanceof Error ? e.message : "The AI could not choose a preset." });
+    } finally {
+      setChoosing(false);
+    }
   }
 
   const preview = useMemo(
@@ -59,6 +99,42 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
       />
       <div className="flex min-h-0 flex-1">
         <aside className="w-80 shrink-0 space-y-4 overflow-y-auto border-r border-border p-5">
+          <Field label="Preset" htmlFor="f-preset">
+            <Select
+              id="f-preset"
+              value={preset?.id ?? ""}
+              onChange={(e) => {
+                const chosen = presetById(e.target.value);
+                if (chosen) {
+                  setChoice(null);
+                  change({ ...chosen.settings });
+                }
+              }}
+            >
+              {preset ? null : <option value="">Custom (your own settings)</option>}
+              {FORMAT_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </Select>
+            {preset ? <p className="text-xs text-muted-foreground">{preset.description}</p> : null}
+            {ai === null ? (
+              <p className="text-xs text-muted-foreground">
+                To let the AI choose, add your AI key in{' '}
+                <button className="underline" onClick={() => navigate("settings")}>
+                  Settings
+                </button>
+                .
+              </p>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full" disabled={!ai || choosing || !online} onClick={() => void chooseWithAi()}>
+                <Sparkles /> {choosing ? "Choosing..." : "Let AI choose the preset"}
+              </Button>
+            )}
+            {!online ? <p className="text-xs text-muted-foreground">Offline: the AI needs a connection.</p> : null}
+            {choice ? <p className={cn("text-xs", choice.ok ? "text-success" : "text-destructive")}>{choice.text}</p> : null}
+          </Field>
           <Field label="Font" htmlFor="f-font">
             <Select id="f-font" value={fmt.fontFamily} onChange={(e) => change({ fontFamily: e.target.value })}>
               {FONT_CHOICES.map((f) => (

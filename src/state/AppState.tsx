@@ -3,12 +3,14 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSetting, setSetting, type Id, type Manuscript, type Workspace } from "@/db/schema";
 import { useOnline } from "@/lib/hooks";
 
-export type Screen = "workspaces" | "outline" | "write" | "edit" | "format" | "export" | "settings";
+export type Screen = "manuscripts" | "outline" | "write" | "edit" | "format" | "export" | "settings";
 export type Theme = "light" | "dark";
 
 interface AppState {
   /** True until the saved choices have been read from the local database. */
   loading: boolean;
+  /** True once a workspace has been chosen or created in this session. Until then the app shows only the workspace screen. */
+  entered: boolean;
   online: boolean;
   screen: Screen;
   navigate: (screen: Screen) => void;
@@ -22,6 +24,7 @@ interface AppState {
   /** The chapter shared by the Write and Edit screens. */
   chapterId: Id | null;
   setChapterId: (id: Id | null) => void;
+  /** Opens a workspace: makes it the active one and leaves the first screen. */
   selectWorkspace: (id: Id) => void;
   selectManuscript: (id: Id) => void;
   theme: Theme;
@@ -31,8 +34,11 @@ interface AppState {
 const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [screen, setScreen] = useState<Screen>("workspaces");
+  const [screen, setScreen] = useState<Screen>("manuscripts");
   const [chapterId, setChapterId] = useState<Id | null>(null);
+  const [entered, setEntered] = useState(false);
+  // The workspace picked in this session; it wins over the saved choice while the saved one is still being written.
+  const [pickedId, setPickedId] = useState<Id | null>(null);
   const online = useOnline();
 
   // undefined = still loading, null = nothing saved yet.
@@ -42,7 +48,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const workspaceRows = useLiveQuery(() => db.workspaces.orderBy("name").toArray(), []);
 
   const workspaces = useMemo(() => workspaceRows ?? [], [workspaceRows]);
-  const workspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? workspaces[0];
+  const workspace = workspaces.find((w) => w.id === (pickedId ?? activeWorkspaceId)) ?? workspaces[0];
 
   const manuscriptRows = useLiveQuery(
     async () => {
@@ -62,7 +68,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const selectWorkspace = useCallback((id: Id) => {
     void setSetting("activeWorkspaceId", id);
+    setPickedId(id);
     setChapterId(null);
+    setEntered(true);
   }, []);
   const selectManuscript = useCallback((id: Id) => {
     void setSetting("activeManuscriptId", id);
@@ -72,14 +80,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void setSetting("theme", theme === "dark" ? "light" : "dark");
   }, [theme]);
 
-  const loading =
+  const stillReading =
     activeWorkspaceId === undefined ||
     activeManuscriptId === undefined ||
     workspaceRows === undefined ||
     manuscriptRows === undefined;
+  // Only the first read counts as loading; later switches of workspace update in place.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!stillReading) setReady(true);
+  }, [stillReading]);
+  const loading = !ready;
 
   const value: AppState = {
     loading,
+    entered,
     online,
     screen,
     navigate: setScreen,

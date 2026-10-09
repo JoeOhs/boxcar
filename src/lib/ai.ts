@@ -1,5 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { getAiSettings, type AgentRole, type AiProvider, type AiSettings } from "@/db/schema";
+import { getAiSettings, type AgentRole, type AiProvider, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
+import { stageInfo } from "./editing";
+import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
   outliner: "Outliner",
@@ -122,54 +124,112 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
   return text.trim();
 }
 
-/** System prompt for a role, with optional manuscript context appended. */
-export function systemPrompt(role: AgentRole, context: string): string {
-  return context.trim()
-    ? `${ROLE_PROMPT[role]}\n\nHere is the current state of the author's manuscript:\n${context}`
-    : ROLE_PROMPT[role];
+/** System prompt for a role, with optional manuscript context appended. `persona` replaces the role's usual brief. */
+export function systemPrompt(role: AgentRole, context: string, persona?: string): string {
+  const brief = persona ?? ROLE_PROMPT[role];
+  return context.trim() ? `${brief}\n\nHere is the current state of the author's manuscript:\n${context}` : brief;
 }
 
 export interface ProposedEdit {
+  kind: SuggestionKind;
+  /** The passage concerned, copied from the chapter. May be empty for a note on the whole chapter. */
   original: string;
   replacement: string;
   comment: string;
 }
 
-/** Asks the editor or proofreader for concrete edits to one chapter. */
-export async function requestEdits(
-  settings: AiSettings,
-  role: "editor" | "proofreader",
-  chapterText: string,
-): Promise<ProposedEdit[]> {
-  const task =
-    role === "proofreader"
-      ? "Proofread the chapter below. Find real spelling, grammar and punctuation mistakes."
-      : "Edit the chapter below. Find places where the prose can be clearer, tighter or more vivid.";
-  const instructions =
-    `${task}\n\nReply with ONLY a JSON array (no prose, no code fences) of at most 12 objects with the keys ` +
-    `"original", "replacement" and "comment". "original" must be copied exactly, character for character, ` +
-    `from one single paragraph of the chapter and be long enough to be unique. "replacement" is the corrected text. ` +
-    `"comment" is a short reason. Reply with [] if nothing needs changing.\n\nCHAPTER:\n${chapterText.slice(0, 24000)}`;
-
-  const reply = await askAi(settings, ROLE_PROMPT[role], [{ role: "user", content: instructions }]);
-  const start = reply.indexOf("[");
-  const end = reply.lastIndexOf("]");
+/** Finds the JSON in an AI reply (which may be wrapped in prose or code fences) and parses it. */
+function parseJson(reply: string, open: "[" | "{"): unknown {
+  const close = open === "[" ? "]" : "}";
+  const start = reply.indexOf(open);
+  const end = reply.lastIndexOf(close);
   if (start === -1 || end <= start) throw new Error("The AI reply was not in the expected format. Try again.");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(reply.slice(start, end + 1));
+    return JSON.parse(reply.slice(start, end + 1));
   } catch {
     throw new Error("The AI reply was not in the expected format. Try again.");
   }
+}
+
+/**
+ * Asks the AI for one editing pass over one chapter. The developmental pass
+ * returns notes about the story; line, copy and proofreading passes return
+ * exact text changes the author can accept.
+ */
+export async function requestStageReview(
+  settings: AiSettings,
+  stage: EditStage,
+  chapterText: string,
+  bookContext: string,
+  styleGuide: string,
+): Promise<ProposedEdit[]> {
+  const info = stageInfo(stage);
+  const guide =
+    stage === "copy"
+      ? `\n\nStyle guide to follow: ${styleGuide.trim() || "none was chosen, so use the standard conventions of the book's language and keep everything consistent."}`
+      : "";
+  const context = bookContext.trim() ? `\n\nTHE BOOK SO FAR:\n${bookContext.slice(0, 8000)}` : "";
+  const format =
+    info.output === "notes"
+      ? `Reply with ONLY a JSON array (no prose, no code fences) of at most 8 objects with the keys "passage" and "comment". ` +
+        `"passage" is a short quote copied exactly, character for character, from one paragraph of the chapter that the note is about, or "" when it concerns the whole chapter. ` +
+        `"comment" is the note: what the problem is and how the author could fix it. Reply with [] if there is nothing to raise.`
+      : `Reply with ONLY a JSON array (no prose, no code fences) of at most 12 objects with the keys ` +
+        `"original", "replacement" and "comment". "original" must be copied exactly, character for character, ` +
+        `from one single paragraph of the chapter and be long enough to be unique. "replacement" is the corrected text. ` +
+        `"comment" is a short reason. Reply with [] if nothing needs changing.`;
+  const prompt = `${info.task}${guide}\n\n${format}${context}\n\nCHAPTER:\n${chapterText.slice(0, 24000)}`;
+
+  const reply = await askAi(settings, info.persona, [{ role: "user", content: prompt }]);
+  const parsed = parseJson(reply, "[");
   if (!Array.isArray(parsed)) throw new Error("The AI reply was not in the expected format. Try again.");
 
   const edits: ProposedEdit[] = [];
   for (const entry of parsed) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { original, replacement, comment } = entry as Record<string, unknown>;
-    if (typeof original === "string" && original && typeof replacement === "string" && original !== replacement) {
-      edits.push({ original, replacement, comment: typeof comment === "string" ? comment : "" });
+    const { original, replacement, passage, comment } = entry as Record<string, unknown>;
+    const why = typeof comment === "string" ? comment.trim() : "";
+    if (info.output === "notes") {
+      if (why) edits.push({ kind: "note", original: typeof passage === "string" ? passage : "", replacement: "", comment: why });
+    } else if (typeof original === "string" && original && typeof replacement === "string" && original !== replacement) {
+      edits.push({ kind: "change", original, replacement, comment: why });
     }
   }
   return edits;
+}
+
+export interface PresetChoice {
+  preset: FormatPreset;
+  /** Why the AI chose it, in the AI's words. */
+  reason: string;
+}
+
+/** What the formatter is told about the book when it picks a preset. */
+export interface BookProfile {
+  title: string;
+  subtitle: string;
+  description: string;
+  keywords: string[];
+  wordCount: number;
+  chapterCount: number;
+  /** The start of the first chapter, so the AI can judge the voice. */
+  sample: string;
+}
+
+/** Asks the Formatter to pick the preset that suits the book best. */
+export async function requestFormatPreset(settings: AiSettings, book: BookProfile): Promise<PresetChoice> {
+  const list = FORMAT_PRESETS.map((p) => `- ${p.id}: ${p.label}. ${p.description}`).join("\n");
+  const prompt =
+    `Choose the formatting preset that suits this book best for an Amazon KDP ebook.\n\nPRESETS:\n${list}\n\n` +
+    `THE BOOK:\nTitle: ${book.title}${book.subtitle ? `\nSubtitle: ${book.subtitle}` : ""}\n` +
+    `Description: ${book.description || "(none written yet)"}\nKeywords: ${book.keywords.join(", ") || "(none)"}\n` +
+    `Length: ${book.wordCount} words in ${book.chapterCount} chapters\n` +
+    `Opening of the first chapter:\n${book.sample.slice(0, 1500) || "(nothing written yet)"}\n\n` +
+    `Reply with ONLY a JSON object (no prose, no code fences) like {"preset": "<one of the preset ids above>", "reason": "<one or two sentences>"}.`;
+
+  const reply = await askAi(settings, ROLE_PROMPT.formatter, [{ role: "user", content: prompt }]);
+  const parsed = parseJson(reply, "{") as { preset?: unknown; reason?: unknown } | null;
+  const preset = typeof parsed?.preset === "string" ? presetById(parsed.preset.trim()) : undefined;
+  if (!preset) throw new Error("The AI did not name one of the presets. Try again.");
+  return { preset, reason: typeof parsed?.reason === "string" ? parsed.reason.trim() : "" };
 }

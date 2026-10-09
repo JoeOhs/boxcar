@@ -1,9 +1,34 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, History, MessageSquare, Sparkles, Trash2, X } from "lucide-react";
-import { db, newId, type AgentRole, type Chapter, type Manuscript, type Suggestion } from "@/db/schema";
-import { AGENT_LABEL, requestEdits, useAiSettings } from "@/lib/ai";
-import { chapterLabel, numberChapters } from "@/lib/chapters";
+import { Check, History, Lock, MessageSquare, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import {
+  db,
+  newId,
+  saveEditModel,
+  type AiProvider,
+  type Chapter,
+  type EditStage,
+  type Id,
+  type Manuscript,
+  type OutlineItem,
+  type Suggestion,
+} from "@/db/schema";
+import { AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
+import { chapterLabel, numberChapters, sortChapters } from "@/lib/chapters";
+import {
+  completeStage,
+  EDIT_STAGES,
+  isStageOpen,
+  MODEL_SUGGESTIONS,
+  modelForStage,
+  reopenStage,
+  selectStage,
+  setStyleGuide,
+  settingsForStage,
+  stageInfo,
+  useEditModels,
+  workflowOf,
+} from "@/lib/editing";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { saveChapter, snapshotChapter } from "@/lib/store";
 import { diffParagraphs, htmlToText, replaceInHtml, textToParagraphs } from "@/lib/text";
@@ -21,16 +46,217 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 type Tab = "suggestions" | "revisions" | "ai";
-type ReviewRole = "editor" | "proofreader";
 
-function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selectedText: string }) {
+const QUICK_PROMPTS: Record<EditStage, { label: string; prompt: string }[]> = {
+  developmental: [
+    { label: "Feedback on pacing", prompt: "Give me feedback on the pacing and structure of this chapter." },
+    { label: "Character consistency", prompt: "Are the characters consistent in this chapter, and with the rest of the book?" },
+  ],
+  line: [
+    { label: "Tighten the opening", prompt: "Suggest how to tighten and sharpen the opening paragraphs of this chapter." },
+    { label: "Check my voice", prompt: "Where does the voice or style wobble in this chapter?" },
+  ],
+  copy: [{ label: "Check consistency", prompt: "Point out any inconsistencies in spelling, names, numbers or style in this chapter." }],
+  proofread: [{ label: "Final check", prompt: "Do a last read for typos, repeated words and formatting slips, and list what you find." }],
+};
+
+function outlineLines(items: OutlineItem[]): string[] {
+  const lines: string[] = [];
+  const walk = (parentId: Id | null, depth: number) => {
+    items
+      .filter((item) => item.parentId === parentId)
+      .sort((a, b) => a.order - b.order)
+      .forEach((item) => {
+        lines.push(`${"  ".repeat(depth)}- ${item.kind}: ${item.title || "Untitled"}${item.summary ? ` - ${item.summary}` : ""}`);
+        walk(item.id, depth + 1);
+      });
+  };
+  walk(null, 0);
+  return lines;
+}
+
+/** The whole book in brief (outline and chapter openings), so the developmental pass sees the big picture. */
+async function bigPicture(manuscript: Manuscript): Promise<string> {
+  const [items, chapters] = await Promise.all([
+    db.outlineItems.where("manuscriptId").equals(manuscript.id).toArray(),
+    db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
+  ]);
+  const sorted = sortChapters(chapters);
+  const numbers = numberChapters(sorted);
+  const parts = [`Title: ${manuscript.title}`];
+  if (manuscript.description.trim()) parts.push(`Description: ${manuscript.description.trim()}`);
+  const outline = outlineLines(items);
+  if (outline.length > 0) parts.push(`Outline:\n${outline.join("\n")}`);
+  parts.push(
+    `Chapters:\n${sorted
+      .map(
+        (c) =>
+          `- ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${htmlToText(c.content)
+            .slice(0, 240)
+            .replace(/\s+/g, " ")}`,
+      )
+      .join("\n")}`,
+  );
+  return parts.join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// The editing workflow: developmental, line, copy, proofreading
+// ---------------------------------------------------------------------------
+
+/** The model the author picked for one pass. Different passes can use different models. */
+function StageModelField({ stage }: { stage: EditStage }) {
   const ai = useAiSettings();
+  const models = useEditModels();
+  const provider = ai?.provider ?? "anthropic";
+  if (!models) return null;
+  return <StageModelInput key={`${provider}-${stage}`} stage={stage} provider={provider} initial={modelForStage(provider, models, stage)} />;
+}
+
+function StageModelInput({ stage, provider, initial }: { stage: EditStage; provider: AiProvider; initial: string }) {
+  const [value, setValue] = useState(initial);
+  const listId = `stage-models-${stage}`;
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="stage-model">Model for this pass</Label>
+      <Input
+        id="stage-model"
+        list={listId}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          void saveEditModel(provider, stage, e.target.value.trim());
+        }}
+        className="h-8 w-56"
+      />
+      <datalist id={listId}>
+        {MODEL_SUGGESTIONS[provider].map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+function StyleGuideField({ manuscript }: { manuscript: Manuscript }) {
+  const [value, setValue] = useState(workflowOf(manuscript).styleGuide);
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="style-guide">Style guide</Label>
+      <Input
+        id="style-guide"
+        value={value}
+        hint="e.g. Chicago Manual of Style"
+        onChange={(e) => {
+          setValue(e.target.value);
+          void setStyleGuide(manuscript, e.target.value);
+        }}
+        className="h-8 w-64"
+      />
+    </div>
+  );
+}
+
+function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
+  const { navigate } = useApp();
+  const workflow = workflowOf(manuscript);
+  const info = stageInfo(workflow.stage);
+  const done = workflow.completed.includes(workflow.stage);
+  const allDone = workflow.completed.length === EDIT_STAGES.length;
+
+  async function finish() {
+    const waiting = await db.suggestions
+      .where("manuscriptId")
+      .equals(manuscript.id)
+      .filter((s) => s.status === "pending" && (s.stage === undefined || s.stage === workflow.stage))
+      .count();
+    if (waiting > 0) {
+      const ok = window.confirm(
+        `${waiting} ${waiting === 1 ? "suggestion is" : "suggestions are"} still waiting in the ${info.label.toLowerCase()} pass. Finish it anyway?`,
+      );
+      if (!ok) return;
+    }
+    await completeStage(manuscript, workflow.stage);
+  }
+
+  return (
+    <div className="shrink-0 space-y-3 border-b border-border bg-muted/30 px-6 py-3">
+      <ol className="flex flex-wrap items-center gap-2" aria-label="Editing workflow">
+        {EDIT_STAGES.map((stage, index) => {
+          const open = isStageOpen(workflow, stage.id);
+          const finished = workflow.completed.includes(stage.id);
+          const active = stage.id === workflow.stage;
+          return (
+            <li key={stage.id} className="flex items-center gap-2">
+              <button
+                disabled={!open}
+                aria-current={active ? "step" : undefined}
+                title={open ? stage.summary : "Finish the passes before this one first"}
+                onClick={() => void selectStage(manuscript, stage.id)}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  active ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-accent",
+                )}
+              >
+                <span className="flex size-4 items-center justify-center text-[10px] font-semibold">
+                  {finished ? <Check className="size-3.5" /> : open ? index + 1 : <Lock className="size-3" />}
+                </span>
+                {stage.label}
+              </button>
+              {index < EDIT_STAGES.length - 1 ? <span className="text-muted-foreground">/</span> : null}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="max-w-3xl text-xs text-muted-foreground">{info.summary}</p>
+      <div className="flex flex-wrap items-end gap-4">
+        <StageModelField stage={workflow.stage} />
+        {workflow.stage === "copy" ? <StyleGuideField key={manuscript.id} manuscript={manuscript} /> : null}
+        <div className="flex items-center gap-2">
+          {done ? (
+            <Button size="sm" variant="outline" onClick={() => void reopenStage(manuscript, workflow.stage)}>
+              <RotateCcw /> Reopen this pass
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => void finish()}>
+              <Check /> Finish {info.label.toLowerCase()}
+            </Button>
+          )}
+          {allDone ? (
+            <Button size="sm" variant="secondary" onClick={() => navigate("format")}>
+              All passes done: go to Format
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions, revisions and the chat for the open chapter
+// ---------------------------------------------------------------------------
+
+function SuggestionsPanel({
+  chapter,
+  manuscript,
+  stage,
+  selectedText,
+}: {
+  chapter: Chapter;
+  manuscript: Manuscript;
+  stage: EditStage;
+  selectedText: string;
+}) {
+  const ai = useAiSettings();
+  const models = useEditModels();
   const online = useOnline();
   const { navigate } = useApp();
+  const info = stageInfo(stage);
+  const notes = info.output === "notes";
   const [original, setOriginal] = useState("");
   const [replacement, setReplacement] = useState("");
   const [comment, setComment] = useState("");
-  const [reviewRole, setReviewRole] = useState<ReviewRole>("editor");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -39,18 +265,24 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
     return rows.sort((a, b) => b.createdAt - a.createdAt);
   }, [chapter.id]);
 
-  const pending = (suggestions ?? []).filter((s) => s.status === "pending");
-  const resolved = (suggestions ?? []).filter((s) => s.status !== "pending");
+  // Suggestions made before the workflow existed carry no pass and show in every pass.
+  const inStage = (suggestions ?? []).filter((s) => s.stage === undefined || s.stage === stage);
+  const pending = inStage.filter((s) => s.status === "pending");
+  const resolved = inStage.filter((s) => s.status !== "pending");
+
+  const canAdd = notes ? Boolean(comment.trim()) : Boolean(original.trim()) && original !== replacement;
 
   async function addOwn() {
-    if (!original.trim() || original === replacement) return;
+    if (!canAdd) return;
     const suggestion: Suggestion = {
       id: newId(),
       chapterId: chapter.id,
       manuscriptId: chapter.manuscriptId,
       source: "user",
+      stage,
+      kind: notes ? "note" : "change",
       original,
-      replacement,
+      replacement: notes ? "" : replacement,
       comment: comment.trim(),
       status: "pending",
       createdAt: Date.now(),
@@ -63,6 +295,10 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
   }
 
   async function accept(s: Suggestion) {
+    if (s.kind === "note") {
+      await db.suggestions.update(s.id, { status: "accepted" });
+      return;
+    }
     const fresh = await db.chapters.get(chapter.id);
     if (!fresh) return;
     const next = replaceInHtml(fresh.content, s.original, s.replacement);
@@ -77,11 +313,18 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
   }
 
   async function review() {
-    if (!ai) return;
+    if (!ai || !models) return;
     setBusy(true);
     setMessage(null);
     try {
-      const edits = await requestEdits(ai, reviewRole, htmlToText(chapter.content));
+      const context = notes ? await bigPicture(manuscript) : "";
+      const edits = await requestStageReview(
+        settingsForStage(ai, models, stage),
+        stage,
+        htmlToText(chapter.content),
+        context,
+        workflowOf(manuscript).styleGuide,
+      );
       const now = Date.now();
       await db.suggestions.bulkAdd(
         edits.map((edit, i) => ({
@@ -89,7 +332,9 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
           chapterId: chapter.id,
           manuscriptId: chapter.manuscriptId,
           source: "ai" as const,
-          role: reviewRole as AgentRole,
+          role: info.role,
+          stage,
+          kind: edit.kind,
           original: edit.original,
           replacement: edit.replacement,
           comment: edit.comment,
@@ -97,11 +342,13 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
           createdAt: now + i,
         })),
       );
+      const who = AGENT_LABEL[info.role].toLowerCase();
+      const what = notes ? "note" : "change";
       setMessage({
         ok: true,
         text: edits.length
-          ? `The ${AGENT_LABEL[reviewRole].toLowerCase()} proposed ${edits.length} change${edits.length === 1 ? "" : "s"}.`
-          : `The ${AGENT_LABEL[reviewRole].toLowerCase()} found nothing to change.`,
+          ? `The ${who} proposed ${edits.length} ${what}${edits.length === 1 ? "" : "s"}.`
+          : `The ${who} found nothing to raise in the ${info.label.toLowerCase()} pass.`,
       });
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : "The review failed." });
@@ -113,33 +360,43 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
   return (
     <div className="space-y-5">
       <Card className="space-y-3 p-3">
-        <h3 className="text-sm font-medium">Suggest a change</h3>
-        <p className="text-xs text-muted-foreground">Select text in the chapter, then use it as the passage to change.</p>
+        <h3 className="text-sm font-medium">{notes ? "Add a note" : "Suggest a change"}</h3>
+        <p className="text-xs text-muted-foreground">
+          {notes
+            ? "Write down a structural concern. Select text in the chapter to point at a passage, or leave the passage empty for the whole chapter."
+            : "Select text in the chapter, then use it as the passage to change."}
+        </p>
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <Label htmlFor="s-original">Passage</Label>
+            <Label htmlFor="s-original">{notes ? "Passage (optional)" : "Passage"}</Label>
             <Button size="sm" variant="ghost" disabled={!selectedText} onClick={() => setOriginal(selectedText)}>
               Use selected text
             </Button>
           </div>
           <Textarea id="s-original" rows={2} value={original} onChange={(e) => setOriginal(e.target.value)} />
         </div>
+        {notes ? null : (
+          <div className="space-y-1">
+            <Label htmlFor="s-replacement">Replace with</Label>
+            <Textarea id="s-replacement" rows={2} value={replacement} onChange={(e) => setReplacement(e.target.value)} />
+          </div>
+        )}
         <div className="space-y-1">
-          <Label htmlFor="s-replacement">Replace with</Label>
-          <Textarea id="s-replacement" rows={2} value={replacement} onChange={(e) => setReplacement(e.target.value)} />
+          <Label htmlFor="s-comment">{notes ? "Your note" : "Why (optional)"}</Label>
+          {notes ? (
+            <Textarea id="s-comment" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
+          ) : (
+            <Input id="s-comment" value={comment} onChange={(e) => setComment(e.target.value)} />
+          )}
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="s-comment">Why (optional)</Label>
-          <Input id="s-comment" value={comment} onChange={(e) => setComment(e.target.value)} />
-        </div>
-        <Button size="sm" disabled={!original.trim() || original === replacement} onClick={() => void addOwn()}>
-          Add suggestion
+        <Button size="sm" disabled={!canAdd} onClick={() => void addOwn()}>
+          {notes ? "Add note" : "Add suggestion"}
         </Button>
       </Card>
 
       <Card className="space-y-2 p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles className="size-4 text-muted-foreground" /> Ask the AI to review this chapter
+          <Sparkles className="size-4 text-muted-foreground" /> Ask the AI for a {info.label.toLowerCase()} pass on this chapter
         </h3>
         {ai === null ? (
           <p className="text-xs text-muted-foreground">
@@ -150,14 +407,11 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
             .
           </p>
         ) : (
-          <div className="flex items-center gap-2">
-            <Select className="h-8 w-36" value={reviewRole} onChange={(e) => setReviewRole(e.target.value as ReviewRole)} aria-label="Who reviews">
-              <option value="editor">Editor</option>
-              <option value="proofreader">Proofreader</option>
-            </Select>
-            <Button size="sm" disabled={!ai || busy || !online || !htmlToText(chapter.content)} onClick={() => void review()}>
-              {busy ? "Reading..." : "Review"}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={!ai || !models || busy || !online || !htmlToText(chapter.content)} onClick={() => void review()}>
+              {busy ? "Reading..." : `Review as ${AGENT_LABEL[info.role].toLowerCase()}`}
             </Button>
+            {ai && models ? <span className="text-xs text-muted-foreground">Model: {modelForStage(ai.provider, models, stage)}</span> : null}
           </div>
         )}
         {!online ? <p className="text-xs text-muted-foreground">Offline: reviews need a connection.</p> : null}
@@ -168,21 +422,32 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Waiting for you ({pending.length})</h3>
-        {pending.length === 0 ? <p className="text-xs text-muted-foreground">No suggestions to review.</p> : null}
+        {pending.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{notes ? "No notes to go through." : "No suggestions to review."}</p>
+        ) : null}
         {pending.map((s) => (
           <Card key={s.id} className="space-y-2 p-3 text-sm">
             <Badge variant={s.source === "ai" ? "default" : "secondary"}>
               {s.source === "ai" && s.role ? AGENT_LABEL[s.role] : "You"}
             </Badge>
-            <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{s.original}</p>
-            <p className="rounded bg-success/10 px-2 py-1">{s.replacement || <em className="text-muted-foreground">(remove)</em>}</p>
-            {s.comment ? <p className="text-xs text-muted-foreground">{s.comment}</p> : null}
+            {s.kind === "note" ? (
+              <>
+                {s.original ? <p className="rounded bg-muted px-2 py-1 italic">{s.original}</p> : null}
+                <p>{s.comment}</p>
+              </>
+            ) : (
+              <>
+                <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{s.original}</p>
+                <p className="rounded bg-success/10 px-2 py-1">{s.replacement || <em className="text-muted-foreground">(remove)</em>}</p>
+                {s.comment ? <p className="text-xs text-muted-foreground">{s.comment}</p> : null}
+              </>
+            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={() => void accept(s)}>
-                <Check /> Accept
+                <Check /> {s.kind === "note" ? "Addressed" : "Accept"}
               </Button>
               <Button size="sm" variant="outline" onClick={() => void db.suggestions.update(s.id, { status: "rejected" })}>
-                <X /> Reject
+                <X /> {s.kind === "note" ? "Dismiss" : "Reject"}
               </Button>
             </div>
           </Card>
@@ -194,8 +459,18 @@ function SuggestionsPanel({ chapter, selectedText }: { chapter: Chapter; selecte
           <h3 className="text-sm font-medium">Done</h3>
           {resolved.map((s) => (
             <div key={s.id} className="flex items-start gap-2 rounded-md border border-border p-2 text-xs">
-              <Badge variant={s.status === "accepted" ? "success" : "outline"}>{s.status === "accepted" ? "Accepted" : "Rejected"}</Badge>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.replacement || s.original}</span>
+              <Badge variant={s.status === "accepted" ? "success" : "outline"}>
+                {s.kind === "note"
+                  ? s.status === "accepted"
+                    ? "Addressed"
+                    : "Dismissed"
+                  : s.status === "accepted"
+                    ? "Accepted"
+                    : "Rejected"}
+              </Badge>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {s.kind === "note" ? s.comment : s.replacement || s.original}
+              </span>
               <button title="Remove from the list" className="text-muted-foreground hover:text-foreground" onClick={() => void db.suggestions.delete(s.id)}>
                 <Trash2 className="size-3.5" />
               </button>
@@ -309,11 +584,13 @@ function RevisionsPanel({ chapter }: { chapter: Chapter }) {
   );
 }
 
-function ChapterReview({ chapter, manuscript }: { chapter: Chapter; manuscript: Manuscript }) {
+function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manuscript: Manuscript; stage: EditStage }) {
+  const ai = useAiSettings();
+  const models = useEditModels();
   const [tab, setTab] = useState<Tab>("suggestions");
   const [selectedText, setSelectedText] = useState("");
-  const [chatRole, setChatRole] = useState<ReviewRole>("editor");
   const viewRef = useRef<HTMLDivElement>(null);
+  const info = stageInfo(stage);
 
   function captureSelection() {
     const selection = window.getSelection();
@@ -337,7 +614,7 @@ function ChapterReview({ chapter, manuscript }: { chapter: Chapter; manuscript: 
           className="prose-manuscript mx-auto max-w-2xl px-8 py-10"
         >
           <h2 className="mt-0! mb-6 text-center font-serif text-2xl font-semibold">{chapter.title || "Untitled"}</h2>
-          {chapter.content.trim() ? (
+          {htmlToText(chapter.content) ? (
             <div dangerouslySetInnerHTML={{ __html: chapter.content }} />
           ) : (
             <p className="text-center text-sm text-muted-foreground">This chapter is empty. Write it in the Write screen.</p>
@@ -355,31 +632,26 @@ function ChapterReview({ chapter, manuscript }: { chapter: Chapter; manuscript: 
           ))}
         </div>
         {tab === "ai" ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="px-4 pt-3">
-              <Select value={chatRole} onChange={(e) => setChatRole(e.target.value as ReviewRole)} aria-label="Who to ask">
-                <option value="editor">Editor</option>
-                <option value="proofreader">Proofreader</option>
-              </Select>
-            </div>
-            <div className="min-h-0 flex-1">
-              <AgentChat
-                key={chatRole}
-                manuscriptId={manuscript.id}
-                role={chatRole}
-                getContext={() =>
-                  `Title: ${manuscript.title}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
-                }
-                quickPrompts={[
-                  { label: "Feedback on pacing", prompt: "Give me feedback on the pacing of this chapter." },
-                  { label: "Check consistency", prompt: "Point out any inconsistencies in this chapter." },
-                ]}
-              />
-            </div>
+          <div className="min-h-0 flex-1">
+            <AgentChat
+              key={stage}
+              manuscriptId={manuscript.id}
+              role={info.role}
+              persona={info.persona}
+              model={ai && models ? modelForStage(ai.provider, models, stage) : undefined}
+              getContext={() =>
+                `Title: ${manuscript.title}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
+              }
+              quickPrompts={QUICK_PROMPTS[stage]}
+            />
           </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {tab === "suggestions" ? <SuggestionsPanel chapter={chapter} selectedText={selectedText} /> : <RevisionsPanel chapter={chapter} />}
+            {tab === "suggestions" ? (
+              <SuggestionsPanel chapter={chapter} manuscript={manuscript} stage={stage} selectedText={selectedText} />
+            ) : (
+              <RevisionsPanel chapter={chapter} />
+            )}
           </div>
         )}
       </aside>
@@ -392,12 +664,13 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
+  const workflow = workflowOf(manuscript);
 
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Edit"
-        description="Review the text, accept or reject suggestions, and keep earlier versions."
+        description="Four passes in order: developmental, line, copy and proofreading. Accept or reject suggestions and keep earlier versions."
         actions={
           current ? (
             <Select
@@ -415,8 +688,9 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
           ) : undefined
         }
       />
+      <WorkflowBar manuscript={manuscript} />
       {chapters === undefined ? null : current ? (
-        <ChapterReview key={current.id} chapter={current} manuscript={manuscript} />
+        <ChapterReview key={current.id} chapter={current} manuscript={manuscript} stage={workflow.stage} />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <h2 className="font-serif text-xl font-semibold">Nothing to edit yet</h2>

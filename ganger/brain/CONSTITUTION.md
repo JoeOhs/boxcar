@@ -32,6 +32,10 @@ I want to create a desktop app for writing books. The idea is that the app is an
 - [ ] A person using the app can: and export
 - [ ] Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left.
 
+### MH-6: a separate workspace for each author or pen name, chosen or created on the first screen
+- [ ] A person using the app can: a separate workspace for each author or pen name, chosen or created on the first screen
+- [ ] Ganger's coverage check finds the file and function that do it, in an app that builds, starts and has no placeholders left.
+
 ## Non-goals
 - (none)
 
@@ -53,3 +57,4 @@ Never resolved silently: ask the person.
 
 ## Amendments
 - v1, 2026-10-09, by Ganger: Written from the brief and the stack decision, before any journeyman ran.
+- v2, 2026-10-09, by the foreman, approved by the person: Round 2: added MH-6 "a separate workspace for each author or pen name, chosen or created on the first screen". Separate workspaces for each author are a new thing the app must do. The segment, editing-pass and AI-formatting requests change how writing, editing and formatting work, so they don't need new must-haves.
