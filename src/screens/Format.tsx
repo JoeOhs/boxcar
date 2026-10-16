@@ -9,8 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { aiReachable, requestFormatPreset, useAiSettings } from "@/lib/ai";
 import { buildPreviewDocument, FONT_CHOICES, TRIM_SIZES } from "@/lib/epub";
-import { FORMAT_PRESETS, isSceneBreakChoice, presetById, presetForGenre, presetMatching, SCENE_BREAK_CHOICES } from "@/lib/formatPresets";
-import { genreById } from "@/lib/genres";
+import { FORMAT_PRESETS, isSceneBreakChoice, presetById, presetMatching, SCENE_BREAK_CHOICES } from "@/lib/formatPresets";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { patchManuscript } from "@/lib/store";
 import { htmlToText } from "@/lib/text";
@@ -37,9 +36,6 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
   const [choosing, setChoosing] = useState(false);
   const [choice, setChoice] = useState<{ ok: boolean; text: string } | null>(null);
   const preset = presetMatching(fmt);
-  // The genre chosen for the book suggests a preset, so the layout and the genre guide agree.
-  const genre = genreById(manuscript.genre);
-  const suggested = presetForGenre(genre);
 
   function change(changes: Partial<FormatSettings>) {
     const next = { ...fmt, ...changes };
@@ -127,27 +123,6 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
               ))}
             </Select>
             {preset ? <p className="text-xs text-muted-foreground">{preset.description}</p> : null}
-            {genre && suggested ? (
-              <p className="text-xs text-muted-foreground">
-                Suggested for {genre.label}: {suggested.label}
-                {suggested.id !== preset?.id ? (
-                  <>
-                    {" "}
-                    <button
-                      className="underline"
-                      onClick={() => {
-                        setChoice(null);
-                        change({ ...suggested.settings });
-                      }}
-                    >
-                      Use it
-                    </button>
-                  </>
-                ) : null}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">Choose a genre for the book in Manuscripts to get a suggested preset.</p>
-            )}
             {ai === null ? (
               <p className="text-xs text-muted-foreground">
                 To let the AI choose, add your AI key in{' '}

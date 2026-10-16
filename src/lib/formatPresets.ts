@@ -1,5 +1,4 @@
 import type { FormatSettings } from "@/db/schema";
-import type { Genre } from "./genres";
 
 /** A ready-made set of format settings for a kind of book. */
 export interface FormatPreset {
@@ -14,7 +13,7 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   {
     id: "classic-novel",
     label: "Classic novel",
-    description: "Traditional fiction: serif type, indented paragraphs, numbered chapters with titles and drop caps. Suits fantasy, urban fantasy, historical, contemporary, Christian, LGBTQ+ and Western fiction.",
+    description: "Traditional fiction: serif type, indented paragraphs, numbered chapters with titles and drop caps. Suits literary, historical and general fiction.",
     settings: {
       fontFamily: "Georgia, serif",
       fontSizePercent: 100,
@@ -30,7 +29,7 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   {
     id: "commercial-fiction",
     label: "Commercial fiction",
-    description: "Fast, compact pages for thrillers, mystery, crime, action, science fiction, dystopian, horror and true crime: tighter line spacing, plain numbered chapters, no drop caps.",
+    description: "Fast, compact pages for thrillers, mystery, crime and science fiction: tighter line spacing, plain numbered chapters, no drop caps.",
     settings: {
       fontFamily: '"Times New Roman", Times, serif',
       fontSizePercent: 100,
@@ -46,7 +45,7 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   {
     id: "romance",
     label: "Romance and light reading",
-    description: "Warm and airy: slightly larger Palatino type, generous line spacing, title-only chapter headings and a decorative scene break. Suits romance, women's fiction, paranormal, cozy mystery, humor, young adult and lighter reading.",
+    description: "Warm and airy: slightly larger Palatino type, generous line spacing, title-only chapter headings and a decorative scene break. Suits romance, cozy and young adult.",
     settings: {
       fontFamily: '"Palatino Linotype", Palatino, serif',
       fontSizePercent: 105,
@@ -62,7 +61,7 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   {
     id: "literary",
     label: "Literary and memoir",
-    description: "Quiet and bookish: Garamond, a little larger, airy lines, numbered chapters and a simple scene break. Suits literary fiction, magical realism, short stories, memoir, travel, essays and philosophy.",
+    description: "Quiet and bookish: Garamond, a little larger, airy lines, numbered chapters and a simple scene break. Suits literary fiction, memoir and essays.",
     settings: {
       fontFamily: "Garamond, serif",
       fontSizePercent: 110,
@@ -78,7 +77,7 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   {
     id: "non-fiction",
     label: "Non-fiction and guides",
-    description: "Clear reference layout: space between paragraphs instead of indents, numbered chapters with titles, a table of contents and a larger page. Suits every non-fiction genre: self-help, business, how-to, biography, history, science, cookbooks, health, politics and the rest.",
+    description: "Clear reference layout: space between paragraphs instead of indents, numbered chapters with titles, a table of contents and a larger page. Suits how-to, business, self-help and academic books.",
     settings: {
       fontFamily: '"Palatino Linotype", Palatino, serif',
       fontSizePercent: 100,
@@ -134,60 +133,4 @@ export function presetMatching(settings: FormatSettings): FormatPreset | undefin
 
 export function presetById(id: string): FormatPreset | undefined {
   return FORMAT_PRESETS.find((p) => p.id === id);
-}
-
-/** The format preset that suits each genre in the genre guide. Genres not listed fall back to the preset for their kind of book. */
-const GENRE_PRESET: Record<string, string> = {
-  fantasy: "classic-novel",
-  urbanfantasy: "classic-novel",
-  historical: "classic-novel",
-  contemporary: "classic-novel",
-  christian: "classic-novel",
-  lgbtq: "classic-novel",
-  western: "classic-novel",
-  scifi: "commercial-fiction",
-  mystery: "commercial-fiction",
-  thriller: "commercial-fiction",
-  action: "commercial-fiction",
-  horror: "commercial-fiction",
-  dystopian: "commercial-fiction",
-  truecrime: "commercial-fiction",
-  romance: "romance",
-  womens: "romance",
-  paranormal: "romance",
-  cozy: "romance",
-  humor: "romance",
-  ya: "romance",
-  literary: "literary",
-  magicalrealism: "literary",
-  shortstories: "literary",
-  memoir: "literary",
-  travel: "literary",
-  essays: "literary",
-  philosophy: "literary",
-  middlegrade: "modern-minimal",
-  selfhelp: "non-fiction",
-  business: "non-fiction",
-  howto: "non-fiction",
-  biography: "non-fiction",
-  history: "non-fiction",
-  science: "non-fiction",
-  cookbook: "non-fiction",
-  religion: "non-fiction",
-  health: "non-fiction",
-  parenting: "non-fiction",
-  finance: "non-fiction",
-  politics: "non-fiction",
-  education: "non-fiction",
-  technology: "non-fiction",
-  sports: "non-fiction",
-  nature: "non-fiction",
-  art: "non-fiction",
-};
-
-/** The format preset suggested for a genre, or undefined when no genre is chosen. */
-export function presetForGenre(genre: Genre | undefined): FormatPreset | undefined {
-  if (!genre) return undefined;
-  const id = GENRE_PRESET[genre.id] ?? (genre.category === "fiction" ? "classic-novel" : "non-fiction");
-  return presetById(id);
 }

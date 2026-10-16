@@ -401,7 +401,7 @@ function SuggestionsPanel({
 
       <Card className="space-y-2 p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles className="size-4 text-muted-foreground" /> Ask the Editor for a {info.label.toLowerCase()} pass on this chapter
+          <Sparkles className="size-4 text-muted-foreground" /> Ask the AI for a {info.label.toLowerCase()} pass on this chapter
         </h3>
         {ai === null ? (
           <p className="text-xs text-muted-foreground">
@@ -606,7 +606,7 @@ function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manus
   const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: "suggestions", label: "Suggestions", icon: <Check /> },
     { id: "revisions", label: "Revisions", icon: <History /> },
-    { id: "ai", label: "Ask the Editor", icon: <MessageSquare /> },
+    { id: "ai", label: "Ask the AI", icon: <MessageSquare /> },
   ];
 
   return (
