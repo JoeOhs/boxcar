@@ -244,7 +244,7 @@ function ExportBody({ manuscript }: { manuscript: Manuscript }) {
         description={`Turn ${manuscript.title} into an epub for Amazon KDP.`}
         actions={
           <Button disabled={!canExport || busy} onClick={() => void exportEpub()}>
-            <FileDown /> {busy ? "Building..." : "Export epub"}
+            <FileDown /> {busy ? "Building..." : "Export"}
           </Button>
         }
       />

@@ -125,10 +125,13 @@ export function readPlainText(source: string, markdown: boolean): DocBlock[] {
         blocks.push({ type: "heading", level: 1, text: line.trim() });
       } else if (!line.trim()) {
         flush();
-      } else if (markdown && /^(?:[-*+]|\d+[.)])\s+/.test(line)) {
+      } else if (markdown && /^\s*(?:[-*+]|\d+[.)])\s+/.test(line)) {
+        // A list item keeps its nesting: two spaces (or a tab) of indentation per level.
         flush();
-        run.push(line.replace(/^(?:[-*+]|\d+[.)])\s+/, "\u2022 "));
-        flush();
+        const indent = (/^\s*/.exec(line)?.[0] ?? "").replace(/\t/g, "  ").length;
+        const body = line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "");
+        const block = listItem(inlineMarkdown(body), Math.floor(indent / 2));
+        if (block) blocks.push(block);
       } else {
         run.push(line);
       }

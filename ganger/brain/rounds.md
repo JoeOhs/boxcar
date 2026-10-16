@@ -79,6 +79,10 @@ What the person asked for: Changes pinned on the running app:
 11. On /, the div "Provider OpenAI Anthropic": add compatability with hugging face and ollama
 Add to the plan: yes
 
-- Outcome: in progress
+- Outcome: finished, and the checks passed
+- Commit: a1fa2298e7
+- Cost: $2.32
+
+- Integration: All of Round 5's open items are now wired and the project type-checks and builds. I have not run the app in a browser, so the drag and drop, the lookup card, and the file pickers are untested at runtime. (18 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

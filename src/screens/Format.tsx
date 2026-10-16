@@ -1,23 +1,20 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Sparkles } from "lucide-react";
 import { DEFAULT_FORMAT, type FormatSettings, type HeadingStyle, type Manuscript, type ParagraphStyle, type TrimSize } from "@/db/schema";
 import { AgentChat } from "@/components/AgentChat";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { aiReachable, requestFormatPreset, useAiSettings } from "@/lib/ai";
 import { buildPreviewDocument, FONT_CHOICES, TRIM_SIZES } from "@/lib/epub";
-import { FORMAT_PRESETS, presetById, presetMatching } from "@/lib/formatPresets";
+import { FORMAT_PRESETS, isSceneBreakChoice, presetById, presetMatching, SCENE_BREAK_CHOICES } from "@/lib/formatPresets";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { patchManuscript } from "@/lib/store";
 import { htmlToText } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
-
-const SCENE_BREAKS = ["* * *", "***", "---", "~", "◆"];
 
 function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
   return (
@@ -45,6 +42,13 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
     setFmt(next);
     void patchManuscript(manuscript.id, { format: next });
   }
+
+  // Scene breaks are chosen from the list only. A value saved as free text by an earlier version is replaced by the default.
+  useEffect(() => {
+    if (!isSceneBreakChoice(fmt.sceneBreak)) change({ sceneBreak: DEFAULT_FORMAT.sceneBreak });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fmt.sceneBreak]);
+  const sceneBreakValue = isSceneBreakChoice(fmt.sceneBreak) ? fmt.sceneBreak : DEFAULT_FORMAT.sceneBreak;
 
   /** Asks the AI formatter to pick the preset that suits this book, and applies it. */
   async function chooseWithAi() {
@@ -182,21 +186,13 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
             </Select>
           </Field>
           <Field label="Scene break" htmlFor="f-scene">
-            <div className="flex gap-2">
-              <Input id="f-scene" value={fmt.sceneBreak} onChange={(e) => change({ sceneBreak: e.target.value })} className="w-28" />
-              <Select
-                aria-label="Scene break presets"
-                value=""
-                onChange={(e) => e.target.value && change({ sceneBreak: e.target.value })}
-              >
-                <option value="">Presets</option>
-                {SCENE_BREAKS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <Select id="f-scene" value={sceneBreakValue} onChange={(e) => change({ sceneBreak: e.target.value })}>
+              {SCENE_BREAK_CHOICES.map((choice) => (
+                <option key={choice.value || "none"} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </Select>
           </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={fmt.dropCaps} onChange={(e) => change({ dropCaps: e.target.checked })} className="size-4 accent-primary" />

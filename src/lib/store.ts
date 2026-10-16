@@ -9,12 +9,14 @@ import {
   type Manuscript,
   type OutlineItem,
   type OutlineKind,
+  type ResearchKind,
+  type ResearchNote,
   type Revision,
   type Workspace,
 } from "@/db/schema";
 import { sortChapters } from "./chapters";
 import type { Genre } from "./genres";
-import { childKind } from "./outline";
+import { childKind, type OutlineNode } from "./outline";
 import { seedRoadmap } from "./roadmap";
 import { countWords } from "./text";
 
@@ -214,6 +216,39 @@ async function addOutlineParts(
   await db.outlineItems.bulkAdd(items);
 }
 
+/**
+ * Adds a tree of outline nodes (from a framework or an imported file) after whatever
+ * the outline already holds. Nothing existing is changed. Returns how many items were added.
+ */
+export async function addOutlineTree(manuscriptId: Id, nodes: OutlineNode[]): Promise<number> {
+  const existing = await db.outlineItems.where("manuscriptId").equals(manuscriptId).toArray();
+  const topLevel = existing.filter((item) => item.parentId === null);
+  const firstOrder = topLevel.length ? Math.max(...topLevel.map((i) => i.order)) + 1 : 0;
+  const now = Date.now();
+  const items: OutlineItem[] = [];
+  const walk = (list: OutlineNode[], parentId: Id | null, startOrder: number) => {
+    list.forEach((node, index) => {
+      const id = newId();
+      items.push({
+        id,
+        manuscriptId,
+        parentId,
+        kind: node.kind,
+        title: node.title,
+        summary: node.summary,
+        notes: "",
+        order: startOrder + index,
+        createdAt: now,
+        updatedAt: now,
+      });
+      walk(node.children, id, 0);
+    });
+  };
+  walk(nodes, null, firstOrder);
+  await db.outlineItems.bulkAdd(items);
+  return items.length;
+}
+
 /** Fills an empty outline with the classic three-act structure. */
 export function applyThreeActTemplate(manuscriptId: Id): Promise<void> {
   return addOutlineParts(manuscriptId, THREE_ACTS, "act");
@@ -305,6 +340,45 @@ export async function chaptersFromOutline(items: OutlineItem[]): Promise<number>
     made++;
   }
   return made;
+}
+
+// ---------------------------------------------------------------------------
+// Research repository
+// ---------------------------------------------------------------------------
+
+/** Adds a note, a link or an imported file's text to the book's research. It is shared with the Ghostwriter until the author turns that off. */
+export async function createResearchNote(
+  manuscriptId: Id,
+  kind: ResearchKind,
+  title: string,
+  content = "",
+  url = "",
+): Promise<ResearchNote> {
+  const now = Date.now();
+  const note: ResearchNote = {
+    id: newId(),
+    manuscriptId,
+    kind,
+    title: title.trim() || "Untitled research",
+    content,
+    url: url.trim(),
+    shareWithGhostwriter: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.researchNotes.add(note);
+  return note;
+}
+
+export async function patchResearchNote(
+  id: Id,
+  changes: Partial<Pick<ResearchNote, "title" | "content" | "url" | "shareWithGhostwriter">>,
+): Promise<void> {
+  await db.researchNotes.update(id, { ...changes, updatedAt: Date.now() });
+}
+
+export async function deleteResearchNote(id: Id): Promise<void> {
+  await db.researchNotes.delete(id);
 }
 
 // ---------------------------------------------------------------------------

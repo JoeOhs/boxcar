@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, History, Lock, MessageSquare, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import { Check, FileDown, History, Lock, MessageSquare, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import {
   db,
   newId,
@@ -29,6 +29,8 @@ import {
   useEditModels,
   workflowOf,
 } from "@/lib/editing";
+import { buildDraftDocx } from "@/lib/docx";
+import { downloadBlob, fileSafeName } from "@/lib/download";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { saveChapter, snapshotChapter } from "@/lib/store";
@@ -663,11 +665,32 @@ function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manus
 }
 
 function EditBody({ manuscript }: { manuscript: Manuscript }) {
-  const { chapterId, setChapterId, navigate } = useApp();
+  const { chapterId, setChapterId, navigate, workspace } = useApp();
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
   const workflow = workflowOf(manuscript);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  /** Writes the whole book as a Word file for a human editor, with the text as it is now. */
+  async function exportDraft() {
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const fresh = await db.manuscripts.get(manuscript.id);
+      if (!fresh) throw new Error("This manuscript no longer exists.");
+      const rows = await db.chapters.where("manuscriptId").equals(manuscript.id).toArray();
+      const blob = await buildDraftDocx(fresh, workspace?.name ?? "", rows);
+      const filename = `${fileSafeName(fresh.title)}-editing-draft.docx`;
+      downloadBlob(blob, filename);
+      setExportNote({ ok: true, text: `Saved ${filename}. Send it to your editor.` });
+    } catch (e) {
+      setExportNote({ ok: false, text: e instanceof Error ? e.message : "The export failed." });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -675,22 +698,32 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
         title="Edit"
         description="Four passes in order: developmental, line, copy and proofreading. Accept or reject suggestions and keep earlier versions."
         actions={
-          current ? (
-            <Select
-              className="h-8 w-64"
-              value={current.id}
-              onChange={(e) => setChapterId(e.target.value)}
-              aria-label="Chapter to edit"
-            >
-              {chapters?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {chapterLabel(c, numbers.get(c.id), "numbered-with-title")}
-                </option>
-              ))}
-            </Select>
-          ) : undefined
+          <>
+            <Button variant="outline" size="sm" disabled={exporting || !chapters?.length} title="Save the whole book as a Word file for a human editor" onClick={() => void exportDraft()}>
+              <FileDown /> {exporting ? "Exporting..." : "Export for editing"}
+            </Button>
+            {current ? (
+              <Select
+                className="h-8 w-64"
+                value={current.id}
+                onChange={(e) => setChapterId(e.target.value)}
+                aria-label="Chapter to edit"
+              >
+                {chapters?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {chapterLabel(c, numbers.get(c.id), "numbered-with-title")}
+                  </option>
+                ))}
+              </Select>
+            ) : null}
+          </>
         }
       />
+      {exportNote ? (
+        <div className={cn("border-b border-border bg-muted px-6 py-1.5 text-xs", exportNote.ok ? "text-muted-foreground" : "text-destructive")}>
+          {exportNote.text}
+        </div>
+      ) : null}
       <WorkflowBar manuscript={manuscript} />
       {chapters === undefined ? null : current ? (
         <ChapterReview key={current.id} chapter={current} manuscript={manuscript} stage={workflow.stage} />

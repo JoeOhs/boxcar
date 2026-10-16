@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Ghost, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Ghost, GripVertical, Plus, Trash2 } from "lucide-react";
 import { deleteChapter, type Chapter, type ChapterKind, type ChapterStatus, type Id, type Manuscript } from "@/db/schema";
 import { CHAPTER_KIND_LABEL, numberChapters } from "@/lib/chapters";
 import { genreById, genreContext } from "@/lib/genres";
-import { useChapters } from "@/lib/hooks";
+import { useChapters, useResearchNotes } from "@/lib/hooks";
+import { researchContext } from "@/lib/research";
 import {
   moveSceneNextTo,
   newScene,
@@ -19,7 +20,9 @@ import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
 import { EditableHtml, EditorToolbar } from "@/components/RichEditor";
 import { NoManuscript } from "@/components/NoManuscript";
+import { ResearchPanel } from "@/components/ResearchPanel";
 import { ScreenHeader } from "@/components/ScreenHeader";
+import { WordLookupArea } from "@/components/WordLookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -362,10 +365,13 @@ function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, sceneList 
  */
 function Ghostwriter({ manuscript, chapter, draft }: { manuscript: Manuscript; chapter?: Chapter; draft?: ChapterDraft }) {
   const selected = draft?.scenes.find((s) => s.id === draft.selectedId);
+  const research = useResearchNotes(manuscript.id);
 
   function getContext(): string {
     const parts = [`Title: ${manuscript.title}`, genreContext(genreById(manuscript.genre))];
     if (manuscript.description) parts.push(`Description: ${manuscript.description}`);
+    const background = researchContext(research ?? []);
+    if (background) parts.push(background);
     if (chapter && draft) {
       const before = draft.scenes
         .slice(0, selected ? draft.scenes.indexOf(selected) : draft.scenes.length)
@@ -410,11 +416,13 @@ function ChapterDesk({
   manuscript,
   menu,
   ghostwriterOpen,
+  researchOpen,
 }: {
   chapter: Chapter;
   manuscript: Manuscript;
   menu: Omit<MenuProps, "sceneList">;
   ghostwriterOpen: boolean;
+  researchOpen: boolean;
 }) {
   const draft = useChapterDraft(chapter);
 
@@ -446,7 +454,7 @@ function ChapterDesk({
             </Select>
           </div>
           <EditorToolbar />
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <WordLookupArea className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-2xl space-y-4 px-6 py-6">
               {draft.scenes.map((s, i) => (
                 <SceneCard key={`${s.id}:${draft.revs[s.id] ?? 0}`} draft={draft} scene={s} index={i} />
@@ -455,9 +463,10 @@ function ChapterDesk({
                 <Plus /> Add scene
               </Button>
             </div>
-          </div>
+          </WordLookupArea>
         </div>
       </section>
+      {researchOpen ? <ResearchPanel manuscriptId={manuscript.id} /> : null}
       {ghostwriterOpen ? <Ghostwriter manuscript={manuscript} chapter={chapter} draft={draft} /> : null}
     </>
   );
@@ -466,6 +475,7 @@ function ChapterDesk({
 function WriteBody({ manuscript }: { manuscript: Manuscript }) {
   const { chapterId, setChapterId } = useApp();
   const [ghostwriterOpen, setGhostwriterOpen] = useState(false);
+  const [researchOpen, setResearchOpen] = useState(false);
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
@@ -494,6 +504,15 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
         actions={
           <>
             <Button
+              variant={researchOpen ? "default" : "outline"}
+              size="sm"
+              aria-pressed={researchOpen}
+              title={researchOpen ? "Close the research" : "Open the research repository"}
+              onClick={() => setResearchOpen((open) => !open)}
+            >
+              <BookOpen /> Research
+            </Button>
+            <Button
               variant={ghostwriterOpen ? "default" : "outline"}
               size="sm"
               aria-pressed={ghostwriterOpen}
@@ -520,7 +539,14 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
       />
       <div className="flex min-h-0 flex-1">
         {chapters === undefined ? null : current ? (
-          <ChapterDesk key={current.id} chapter={current} manuscript={manuscript} menu={menu} ghostwriterOpen={ghostwriterOpen} />
+          <ChapterDesk
+            key={current.id}
+            chapter={current}
+            manuscript={manuscript}
+            menu={menu}
+            ghostwriterOpen={ghostwriterOpen}
+            researchOpen={researchOpen}
+          />
         ) : (
           <>
             <ChapterMenu {...menu} />
@@ -535,6 +561,7 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
                 </Button>
               </div>
             </section>
+            {researchOpen ? <ResearchPanel manuscriptId={manuscript.id} /> : null}
             {ghostwriterOpen ? <Ghostwriter manuscript={manuscript} /> : null}
           </>
         )}

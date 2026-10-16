@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Chapter, type Id, type OutlineItem } from "@/db/schema";
+import { db, type Chapter, type Id, type OutlineItem, type ResearchNote } from "@/db/schema";
 import { sortChapters } from "./chapters";
+
+/** The research repository of a manuscript, oldest first. undefined while loading. */
+export function useResearchNotes(manuscriptId: Id): ResearchNote[] | undefined {
+  return useLiveQuery(() => db.researchNotes.where("manuscriptId").equals(manuscriptId).sortBy("createdAt"), [manuscriptId]);
+}
 
 /** Chapters of a manuscript in book order. undefined while loading. */
 export function useChapters(manuscriptId: Id): Chapter[] | undefined {

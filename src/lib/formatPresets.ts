@@ -108,6 +108,20 @@ export const FORMAT_PRESETS: FormatPreset[] = [
   },
 ];
 
+/** The scene breaks the author can choose from. "None" means no mark between scenes. */
+export const SCENE_BREAK_CHOICES: { value: string; label: string }[] = [
+  { value: "", label: "None" },
+  { value: "* * *", label: "* * *" },
+  { value: "***", label: "***" },
+  { value: "---", label: "---" },
+  { value: "~", label: "~" },
+  { value: "◆", label: "◆" },
+];
+
+export function isSceneBreakChoice(value: string): boolean {
+  return SCENE_BREAK_CHOICES.some((choice) => choice.value === value);
+}
+
 function sameSettings(a: FormatSettings, b: FormatSettings): boolean {
   return (Object.keys(a) as (keyof FormatSettings)[]).every((key) => a[key] === b[key]);
 }

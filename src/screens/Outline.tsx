@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  FileUp,
   IndentDecrease,
   IndentIncrease,
   ListPlus,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
 import { NoManuscript } from "@/components/NoManuscript";
+import { OutlineImport } from "@/components/OutlineImport";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +118,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const [selectedId, setSelectedId] = useState<Id | null>(null);
   const [showAi, setShowAi] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   const genre = genreById(manuscript.genre);
   const rows = useMemo(() => flattenOutline(items ?? []), [items]);
@@ -178,6 +181,9 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
         description={`The bones of ${manuscript.title}. Build acts, chapters, scenes and beats, then write from them.`}
         actions={
           <>
+            <Button variant={showImport ? "secondary" : "outline"} size="sm" onClick={() => setShowImport((v) => !v)}>
+              <FileUp /> Import outline
+            </Button>
             <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={() => void makeChapters()}>
               Create chapters from outline
             </Button>
@@ -187,6 +193,15 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
           </>
         }
       />
+      {showImport ? (
+        <OutlineImport
+          manuscriptId={manuscript.id}
+          onDone={(message) => {
+            setNotice(message);
+            setShowImport(false);
+          }}
+        />
+      ) : null}
       {notice ? (
         <div className="border-b border-border bg-muted px-6 py-1.5 text-xs text-muted-foreground">{notice}</div>
       ) : null}
