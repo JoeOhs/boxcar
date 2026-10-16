@@ -1,4 +1,4 @@
-import { db } from "@/db/schema";
+import { db, LEGACY_CHAPTER_STATUS } from "@/db/schema";
 
 /**
  * Save a backup of everything to one file, and open it again.
@@ -168,7 +168,12 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       }
     }
     for (const table of tables) {
-      const rows = (backup.tables[table.name] ?? []).map(decodeRow);
+      // Backups made before the Roadmap stages carry the old chapter statuses; bring them up to date.
+      const rows = (backup.tables[table.name] ?? []).map(decodeRow).map((row) =>
+        table.name === "chapters" && typeof row.status === "string" && row.status in LEGACY_CHAPTER_STATUS
+          ? { ...row, status: LEGACY_CHAPTER_STATUS[row.status] }
+          : row,
+      );
       const usable = table.name === "settings" ? rows.filter((row) => !LOCAL_ONLY_SETTINGS(String(row.key))) : rows;
       if (usable.length > 0) await table.bulkPut(usable);
     }

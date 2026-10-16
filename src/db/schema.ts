@@ -152,7 +152,19 @@ export interface OutlineItem {
 }
 
 export type ChapterKind = "front" | "chapter" | "back";
-export type ChapterStatus = "draft" | "revised" | "final";
+/**
+ * Where a chapter is in the book's work: the Roadmap stages (outline, write, format, publish)
+ * with the four editing passes in place of the single Edit stage. The choices are listed in
+ * CHAPTER_STATUS_CHOICES (src/lib/chapters.ts).
+ */
+export type ChapterStatus = "outlining" | "drafting" | EditStage | "formatting" | "ready";
+
+/** The chapter statuses used before the Roadmap stages, mapped to their new stage. Used by the database upgrade and by backups made earlier. */
+export const LEGACY_CHAPTER_STATUS: Record<string, ChapterStatus> = {
+  draft: "drafting",
+  revised: "line",
+  final: "formatting",
+};
 
 /** One written section of the book: front matter, a chapter, or back matter. */
 export interface Chapter {
@@ -377,6 +389,17 @@ export class BoxcarDB extends Dexie {
       roadmapCards: "id, manuscriptId, column, [manuscriptId+column]",
       researchNotes: "id, manuscriptId, updatedAt",
     });
+    // Version 5 replaces the chapter statuses draft / revised / final with the Roadmap stages.
+    this.version(5)
+      .stores({})
+      .upgrade((tx) =>
+        tx
+          .table("chapters")
+          .toCollection()
+          .modify((chapter: { status?: string }) => {
+            chapter.status = LEGACY_CHAPTER_STATUS[chapter.status ?? ""] ?? "drafting";
+          }),
+      );
   }
 }
 

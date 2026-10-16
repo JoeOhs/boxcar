@@ -1,6 +1,21 @@
-import type { Chapter, ChapterKind, HeadingStyle, Id } from "@/db/schema";
+import type { Chapter, ChapterKind, ChapterStatus, HeadingStyle, Id } from "@/db/schema";
 
 const RANK: Record<ChapterKind, number> = { front: 0, chapter: 1, back: 2 };
+
+/**
+ * The stages a chapter can be in, fixed: the Roadmap's stages (Outline, Write, Edit, Format,
+ * Publish) with Edit split into its four passes. Shown in the Write screen's status menu.
+ */
+export const CHAPTER_STATUS_CHOICES: { value: ChapterStatus; label: string }[] = [
+  { value: "outlining", label: "Outline" },
+  { value: "drafting", label: "Write" },
+  { value: "developmental", label: "Edit: developmental" },
+  { value: "line", label: "Edit: line" },
+  { value: "copy", label: "Edit: copy" },
+  { value: "proofread", label: "Edit: proofread" },
+  { value: "formatting", label: "Format" },
+  { value: "ready", label: "Publish" },
+];
 
 /** Book order: front matter, then chapters, then back matter; by `order` within each. */
 export function sortChapters(chapters: Chapter[]): Chapter[] {

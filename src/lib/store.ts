@@ -281,7 +281,7 @@ export async function createChapter(
     title,
     content,
     wordCount: countWords(content),
-    status: "draft",
+    status: "drafting",
     order: same.length ? Math.max(...same.map((c) => c.order)) + 1 : 0,
     createdAt: now,
     updatedAt: now,

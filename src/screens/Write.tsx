@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, BookOpen, Ghost, GripVertical, Plus, Trash2 } from "lucide-react";
-import { deleteChapter, type Chapter, type ChapterKind, type ChapterStatus, type Id, type Manuscript } from "@/db/schema";
-import { CHAPTER_KIND_LABEL, numberChapters } from "@/lib/chapters";
+import { deleteChapter, type Chapter, type ChapterKind, type ChapterStatus, type Id, type Manuscript, type OutlineItem } from "@/db/schema";
+import { CHAPTER_KIND_LABEL, CHAPTER_STATUS_CHOICES, numberChapters } from "@/lib/chapters";
 import { genreById, genreContext } from "@/lib/genres";
-import { useChapters, useResearchNotes } from "@/lib/hooks";
+import { outlineToText } from "@/lib/outline";
+import { useChapters, useOutlineItems, useResearchNotes } from "@/lib/hooks";
 import { researchContext } from "@/lib/research";
 import {
   moveSceneNextTo,
@@ -360,18 +361,46 @@ function ChapterMenu({ chapters, currentId, numbers, onSelect, onAdd, sceneList 
 }
 
 /**
+ * The outline point a chapter was made from (its outline item), with the path to it, what happens there
+ * and the beats under it in order. The Ghostwriter drafts a chapter from this.
+ */
+function describeOutlinePoint(point: OutlineItem, all: OutlineItem[]): string {
+  const byId = new Map(all.map((item) => [item.id, item]));
+  const trail: string[] = [];
+  let current: OutlineItem | undefined = point;
+  while (current) {
+    trail.unshift(current.title.trim() || "Untitled");
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  const lines = [`This chapter is the outline point "${trail.join(" > ")}".`];
+  if (point.summary.trim()) lines.push(`What happens here: ${point.summary.trim()}`);
+  if (point.notes.trim()) lines.push(`Notes: ${point.notes.trim()}`);
+  const beats = all
+    .filter((item) => item.parentId === point.id)
+    .sort((a, b) => a.order - b.order)
+    .map((item) => `- ${item.title.trim() || "Untitled"}${item.summary.trim() ? `: ${item.summary.trim()}` : ""}`);
+  if (beats.length) lines.push(`Beats to cover, in order:\n${beats.join("\n")}`);
+  return lines.join("\n");
+}
+
+/**
  * The Ghostwriter: a conversation, in a menu on the right, with an AI that drafts prose in the author's voice.
- * It is shown the book's genre, the chapter so far and the selected scene, and any reply can be added to that scene.
+ * It is shown the book's genre, the book's outline, the outline point of the open chapter, the chapter so far
+ * and the selected scene, and any reply can be added to the selected scene.
  */
 function Ghostwriter({ manuscript, chapter, draft }: { manuscript: Manuscript; chapter?: Chapter; draft?: ChapterDraft }) {
   const selected = draft?.scenes.find((s) => s.id === draft.selectedId);
   const research = useResearchNotes(manuscript.id);
+  const outline = useOutlineItems(manuscript.id);
+  const point = chapter ? outline?.find((item) => item.chapterId === chapter.id) : undefined;
 
   function getContext(): string {
     const parts = [`Title: ${manuscript.title}`, genreContext(genreById(manuscript.genre))];
     if (manuscript.description) parts.push(`Description: ${manuscript.description}`);
     const background = researchContext(research ?? []);
     if (background) parts.push(background);
+    if (outline && outline.length > 0) parts.push(`The book's outline:\n${outlineToText(outline).slice(0, 6000)}`);
+    if (point && outline) parts.push(describeOutlinePoint(point, outline));
     if (chapter && draft) {
       const before = draft.scenes
         .slice(0, selected ? draft.scenes.indexOf(selected) : draft.scenes.length)
@@ -391,15 +420,24 @@ function Ghostwriter({ manuscript, chapter, draft }: { manuscript: Manuscript; c
         manuscriptId={manuscript.id}
         role="ghostwriter"
         getContext={getContext}
-        quickPrompts={
-          selected
+        quickPrompts={[
+          ...(point
+            ? [
+                {
+                  label: "Draft from the outline",
+                  prompt:
+                    "Draft the prose for this chapter's outline point, covering the beats in order, in my voice. Give the prose itself, ready to paste into a scene, with no headings, notes or preamble. Aim for about 1,500 words.",
+                },
+              ]
+            : []),
+          ...(selected
             ? [
                 { label: "Continue the scene", prompt: "Continue the selected scene from where it stops, in my voice. Write about 200 words." },
                 { label: "What happens next?", prompt: "Suggest three different directions the story could take after the selected scene, one or two sentences each." },
                 { label: "Tighten it", prompt: "Rewrite the selected scene more tightly, keeping its events, voice and meaning." },
               ]
-            : undefined
-        }
+            : []),
+        ]}
         onUseReply={
           draft && selected
             ? { label: "Add to scene", run: (text) => draft.appendToScene(selected.id, text) }
@@ -443,14 +481,16 @@ function ChapterDesk({
               {draft.saved ? "Saved" : "Saving..."}
             </span>
             <Select
-              className="h-8 w-28 shrink-0"
+              className="h-8 w-44 shrink-0"
               value={chapter.status}
               onChange={(e) => void saveChapter(chapter.id, { status: e.target.value as ChapterStatus })}
               aria-label="Chapter status"
             >
-              <option value="draft">Draft</option>
-              <option value="revised">Revised</option>
-              <option value="final">Final</option>
+              {CHAPTER_STATUS_CHOICES.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
             </Select>
           </div>
           <EditorToolbar />

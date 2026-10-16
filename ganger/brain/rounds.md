@@ -80,9 +80,24 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
-- Commit: a1fa2298e7
+- Commit: 591ba2c64d
 - Cost: $2.32
 
 - Integration: All of Round 5's open items are now wired and the project type-checks and builds. I have not run the app in a browser, so the drag and drop, the lookup card, and the file pickers are untested at runtime. (18 files)
+
+## Round 6: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "Ask the AI" on /: Change this button to "Ask the Editor"
+2. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the heading "Ask the AI for a developmental pass on this chapter" on /: Change "Ask the AI..." to "Ask the Editor..."
+3. In "Writing desk" (src/screens/Write.tsx · Write), the list "Chapter status" on /: chapter status dropdown menu should be hard-coded to the status of the kanban and editing stages
+4. In "Genre guide for new manuscripts" (src/components/GenrePicker.tsx · GenrePicker), the list "No genre yet Fantasy Science fiction Mystery and crime Th..." on /: genres in the manuscript do not match genres listed in the formatting section - pull genres from a source like Reedsy.com to have a more complete genre list and make sure the genre selected is cohesive with each section of the app
+5. In "Writing desk" (src/screens/Write.tsx · Write), the button "Open the Ghostwriter" on /: test whether the ghostwriter agent can work directly from an outline by creating a test outline and manuscript
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.18
+
+- Integration: All five Round 6 changes are in. `tsc --noEmit` and `vite build` both pass. I have not run the app in a browser, so the UI behaviour is checked by reading the code only. (11 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.
