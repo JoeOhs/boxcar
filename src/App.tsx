@@ -1,22 +1,21 @@
 import type { ReactNode } from "react";
 import {
-  BookOpen,
   Download,
   LayoutTemplate,
+  SquareKanban,
   Library,
   ListTree,
-  Moon,
   Palette,
   PenLine,
   Settings as SettingsIcon,
   SpellCheck,
-  Sun,
   WifiOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApp, type Screen } from "@/state/AppState";
-import { Button } from "@/components/ui/button";
+import { Brand, ThemeToggle } from "@/components/Brand";
 import { Manuscripts } from "@/screens/Manuscripts";
+import { Roadmap } from "@/screens/Roadmap";
 import { WorkspaceGate } from "@/screens/WorkspaceGate";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { Outline } from "@/screens/Outline";
@@ -29,6 +28,7 @@ import { Settings } from "@/screens/Settings";
 
 const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
   { screen: "manuscripts", label: "Manuscripts", icon: <Library /> },
+  { screen: "roadmap", label: "Roadmap", icon: <SquareKanban /> },
   { screen: "outline", label: "Outline", icon: <ListTree /> },
   { screen: "write", label: "Write", icon: <PenLine /> },
   { screen: "edit", label: "Edit", icon: <SpellCheck /> },
@@ -41,6 +41,8 @@ function CurrentScreen({ screen }: { screen: Screen }) {
   switch (screen) {
     case "manuscripts":
       return <Manuscripts />;
+    case "roadmap":
+      return <Roadmap />;
     case "outline":
       return <Outline />;
     case "write":
@@ -77,7 +79,7 @@ function NavButton({ screen, label, icon }: { screen: Screen; label: string; ico
 }
 
 export default function App() {
-  const { loading, entered, online, screen, workspace, theme, toggleTheme } = useApp();
+  const { loading, entered, online, screen, workspace } = useApp();
 
   if (loading) {
     return <div className="p-8 text-sm text-muted-foreground">Opening your library...</div>;
@@ -89,10 +91,7 @@ export default function App() {
   return (
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-muted/50">
-        <div className="flex items-center gap-2 px-5 pb-3 pt-5">
-          <BookOpen className="size-5" />
-          <span className="font-serif text-lg font-semibold tracking-tight">Boxcar Studio</span>
-        </div>
+        <Brand className="px-5 pb-3 pt-5" />
 
         <div className="space-y-2 px-4 pb-3">
           <div>
@@ -120,9 +119,7 @@ export default function App() {
             <div className="flex-1">
               <NavButton screen="settings" label="Settings" icon={<SettingsIcon />} />
             </div>
-            <Button variant="ghost" size="icon" title={theme === "dark" ? "Light theme" : "Dark theme"} onClick={toggleTheme}>
-              {theme === "dark" ? <Sun /> : <Moon />}
-            </Button>
+            <ThemeToggle />
           </div>
         </div>
       </aside>

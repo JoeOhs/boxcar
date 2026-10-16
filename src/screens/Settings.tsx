@@ -1,10 +1,20 @@
 import { useState, type ReactNode } from "react";
 import { Check, ImageIcon, KeyRound, ShieldCheck } from "lucide-react";
 import type { AiProvider, ApiKeyKind, StoredApiKey } from "@/db/schema";
-import { askAi, DEFAULT_MODEL, PROVIDER_LABEL } from "@/lib/ai";
+import { askAi } from "@/lib/ai";
+import {
+  DEFAULT_MODEL,
+  KEY_HINT,
+  normalizeServerUrl,
+  OLLAMA_DEFAULT_URL,
+  PROVIDER_LABEL,
+  providerHasServerUrl,
+  providerNeedsKey,
+} from "@/lib/providers";
 import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDER_LABEL } from "@/lib/imageAi";
 import { useOnline } from "@/lib/hooks";
 import { addApiKey, deleteApiKey, revokeApiKey, setApiKeyModel, selectApiKey, useApiKeys } from "@/lib/keyVault";
+import { BackupControls } from "@/components/BackupControls";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +44,7 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
   const [provider, setProvider] = useState(providerIds[0]);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(defaultModels[providerIds[0]]);
+  const [serverUrl, setServerUrl] = useState(OLLAMA_DEFAULT_URL);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -44,13 +55,17 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
     setMessage(null);
   }
 
+  const needsKey = providerNeedsKey(provider);
+  const hasServer = providerHasServerUrl(provider);
+
   async function save(thenTest: boolean) {
     const plain = apiKey.trim();
+    const baseUrl = hasServer ? normalizeServerUrl(serverUrl) : undefined;
     setBusy(true);
     setMessage(null);
     try {
       const chosenModel = model.trim() || defaultModels[provider];
-      await addApiKey(kind, { provider, model: chosenModel, apiKey: plain });
+      await addApiKey(kind, { provider, model: chosenModel, apiKey: plain, baseUrl });
       // The plain key leaves the form as soon as it has been encrypted and stored.
       setApiKey("");
       if (!thenTest) {
@@ -58,7 +73,7 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
       } else {
         try {
           await askAi(
-            { provider: provider as AiProvider, apiKey: plain, model: chosenModel },
+            { provider: provider as AiProvider, apiKey: plain, model: chosenModel, baseUrl },
             "Reply with the single word: ready",
             [{ role: "user", content: "Are you there?" }],
           );
@@ -110,28 +125,47 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
           <Input id={`${kind}-model`} value={model} onChange={(e) => setModel(e.target.value)} />
         </div>
       </div>
-      <div className="space-y-1">
-        <Label htmlFor={`${kind}-key`}>{providers[provider]} API key</Label>
-        <Input
-          id={`${kind}-key`}
-          type="password"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          hint={keyHints[provider]}
-        />
-      </div>
+      {needsKey ? (
+        <div className="space-y-1">
+          <Label htmlFor={`${kind}-key`}>{providers[provider]} API key</Label>
+          <Input
+            id={`${kind}-key`}
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            hint={keyHints[provider]}
+          />
+        </div>
+      ) : null}
+      {hasServer ? (
+        <div className="space-y-1">
+          <Label htmlFor={`${kind}-server`}>Server address</Label>
+          <Input id={`${kind}-server`} value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} hint={OLLAMA_DEFAULT_URL} />
+          <p className="text-xs text-muted-foreground">
+            Ollama runs on your own computer, so it needs no key and no connection. Install a model first (for example, run
+            "ollama pull {model.trim() || DEFAULT_MODEL.ollama}"), and start Ollama with OLLAMA_ORIGINS set to this app's
+            address so it accepts requests from here.
+          </p>
+        </div>
+      ) : null}
       <div className="flex items-center gap-2">
-        <Button disabled={!apiKey.trim() || busy} onClick={() => void save(false)}>
-          Save key
+        <Button disabled={(needsKey && !apiKey.trim()) || busy} onClick={() => void save(false)}>
+          {needsKey ? "Save key" : "Save connection"}
         </Button>
         {canTest ? (
-          <Button variant="outline" disabled={!apiKey.trim() || busy || !online} onClick={() => void save(true)}>
+          <Button
+            variant="outline"
+            disabled={(needsKey && !apiKey.trim()) || busy || (needsKey && !online)}
+            onClick={() => void save(true)}
+          >
             {busy ? "Working..." : "Save and test"}
           </Button>
         ) : null}
       </div>
-      {canTest && !online ? <p className="text-sm text-muted-foreground">You are offline, so a key cannot be tested right now.</p> : null}
+      {canTest && needsKey && !online ? (
+        <p className="text-sm text-muted-foreground">You are offline, so a key cannot be tested right now.</p>
+      ) : null}
       {message ? (
         <p className={"flex items-start gap-1.5 text-sm " + (message.ok ? "text-success" : "text-destructive")}>
           {message.ok ? <Check className="mt-0.5 size-4 shrink-0" /> : null}
@@ -154,7 +188,13 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
                 <li key={row.id} className="space-y-2 rounded-md border border-border p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{providers[row.provider] ?? row.provider}</span>
-                    <code className="text-xs text-muted-foreground">{revoked ? "wiped" : `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${row.tail}`}</code>
+                    <code className="text-xs text-muted-foreground">
+                      {revoked
+                        ? "wiped"
+                        : providerNeedsKey(row.provider)
+                          ? `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${row.tail}`
+                          : (row.baseUrl ?? OLLAMA_DEFAULT_URL)}
+                    </code>
                     {revoked ? (
                       <Badge variant="destructive">Revoked</Badge>
                     ) : inUse ? (
@@ -190,7 +230,7 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
                         Use this key
                       </Button>
                     ) : null}
-                    {!revoked ? (
+                    {!revoked && providerNeedsKey(row.provider) ? (
                       <Button size="sm" variant="outline" onClick={() => void revoke(row)}>
                         Revoke
                       </Button>
@@ -217,10 +257,10 @@ export function Settings() {
           kind="text"
           title="AI staff"
           icon={<KeyRound className="size-4 text-muted-foreground" />}
-          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
+          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, or Ollama on this computer. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
           providers={PROVIDER_LABEL}
           defaultModels={DEFAULT_MODEL}
-          keyHints={{ openai: "sk-...", anthropic: "sk-ant-..." }}
+          keyHints={KEY_HINT}
           modelLabel="Model"
           canTest
         />
@@ -235,12 +275,14 @@ export function Settings() {
           modelLabel="Image model"
           canTest={false}
         />
-        <Card className="max-w-xl space-y-2 p-5">
+        <Card className="max-w-xl space-y-3 p-5">
           <h2 className="text-sm font-medium">Your data</h2>
           <p className="text-sm text-muted-foreground">
-            There is no account and no server. Everything lives in this app's local storage on your computer. Use Export
-            to keep a copy of a finished book.
+            There is no account and no server. Everything lives in this app's local storage on your computer. Save a
+            backup to keep a copy of everything in one file, and open it again to bring it back. Use Export to make the
+            finished book.
           </p>
+          <BackupControls />
         </Card>
       </div>
     </div>

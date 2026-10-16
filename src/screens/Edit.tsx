@@ -13,13 +13,13 @@ import {
   type OutlineItem,
   type Suggestion,
 } from "@/db/schema";
-import { AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
+import { aiReachable, AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
+import { MODEL_SUGGESTIONS } from "@/lib/providers";
 import { chapterLabel, numberChapters, sortChapters } from "@/lib/chapters";
 import {
   completeStage,
   EDIT_STAGES,
   isStageOpen,
-  MODEL_SUGGESTIONS,
   modelForStage,
   reopenStage,
   selectStage,
@@ -113,7 +113,7 @@ function StageModelField({ stage }: { stage: EditStage }) {
   const models = useEditModels();
   const provider = ai?.provider ?? "anthropic";
   if (!models) return null;
-  return <StageModelInput key={`${provider}-${stage}`} stage={stage} provider={provider} initial={modelForStage(provider, models, stage)} />;
+  return <StageModelInput key={`${provider}-${stage}`} stage={stage} provider={provider} initial={modelForStage(provider, models, stage, ai?.model)} />;
 }
 
 function StageModelInput({ stage, provider, initial }: { stage: EditStage; provider: AiProvider; initial: string }) {
@@ -411,13 +411,13 @@ function SuggestionsPanel({
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={!ai || !models || busy || !online || !htmlToText(chapter.content)} onClick={() => void review()}>
+            <Button size="sm" disabled={!ai || !models || busy || !aiReachable(ai, online) || !htmlToText(chapter.content)} onClick={() => void review()}>
               {busy ? "Reading..." : `Review as ${AGENT_LABEL[info.role].toLowerCase()}`}
             </Button>
-            {ai && models ? <span className="text-xs text-muted-foreground">Model: {modelForStage(ai.provider, models, stage)}</span> : null}
+            {ai && models ? <span className="text-xs text-muted-foreground">Model: {modelForStage(ai.provider, models, stage, ai.model)}</span> : null}
           </div>
         )}
-        {!online ? <p className="text-xs text-muted-foreground">Offline: reviews need a connection.</p> : null}
+        {!aiReachable(ai, online) ? <p className="text-xs text-muted-foreground">Offline: reviews need a connection.</p> : null}
         <p className="text-xs text-muted-foreground">Nothing changes in your text until you accept a suggestion.</p>
       </Card>
 
@@ -641,7 +641,7 @@ function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manus
               manuscriptId={manuscript.id}
               role={info.role}
               persona={info.persona}
-              model={ai && models ? modelForStage(ai.provider, models, stage) : undefined}
+              model={ai && models ? modelForStage(ai.provider, models, stage, ai.model) : undefined}
               getContext={() =>
                 `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
               }

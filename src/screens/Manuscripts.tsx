@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, Trash2, UserRound } from "lucide-react";
+import { FileUp, Plus, Trash2, UserRound } from "lucide-react";
 import {
   db,
   deleteManuscript,
@@ -10,8 +10,11 @@ import {
   type ManuscriptStatus,
   type Workspace,
 } from "@/db/schema";
+import { IMPORT_ACCEPT } from "@/lib/documents";
 import { genreById } from "@/lib/genres";
+import { importManuscript, planImport, type ImportPlan } from "@/lib/importManuscript";
 import { createManuscript, patchManuscript, patchWorkspace } from "@/lib/store";
+import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { GenrePicker } from "@/components/GenrePicker";
@@ -93,7 +96,7 @@ function TargetInput({ id, value }: { id: Id; value: number }) {
   );
 }
 
-type Pane = "manuscript" | "new" | "author";
+type Pane = "manuscript" | "new" | "import" | "author";
 
 /** The form for a new manuscript: a title and the genre guide. */
 function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
@@ -110,7 +113,7 @@ function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCa
     try {
       const created = await createManuscript(workspace, title, genre, startOutline);
       selectManuscript(created.id);
-      navigate("outline");
+      navigate("roadmap");
     } finally {
       setBusy(false);
     }
@@ -149,6 +152,106 @@ function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCa
   );
 }
 
+/** Brings a manuscript in from a file: .txt, .md, .html, .docx or .epub. It is cut into chapters, which the author can check first. */
+function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
+  const { selectManuscript, navigate } = useApp();
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function choose(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setPlan(null);
+    try {
+      const found = await planImport(file);
+      setPlan(found);
+      setTitle(found.title);
+      setFileName(file.name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That file could not be read.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run() {
+    if (!plan || !title.trim() || busy) return;
+    setBusy(true);
+    try {
+      const created = await importManuscript(workspace, plan, title.trim());
+      selectManuscript(created.id);
+      navigate("roadmap");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The manuscript could not be imported.");
+      setBusy(false);
+    }
+  }
+
+  const words = plan ? plan.chapters.reduce((sum, c) => sum + countWords(c.html), 0) : 0;
+
+  return (
+    <Card className="max-w-2xl space-y-4 p-5">
+      <h2 className="font-serif text-lg font-semibold">Import a manuscript</h2>
+      <p className="text-sm text-muted-foreground">
+        Choose a Word document (.docx), an epub, an HTML file, or a text or Markdown file. It is added to {workspace.name} and cut into
+        chapters at its headings, or at lines such as "Chapter 1".
+      </p>
+      <Button asChild variant="outline" className={cn(busy && "pointer-events-none opacity-50")}>
+        <label className="cursor-pointer">
+          <FileUp /> {plan ? "Choose a different file" : "Choose a file"}
+          <input
+            type="file"
+            accept={IMPORT_ACCEPT}
+            className="sr-only"
+            onChange={(e) => {
+              void choose(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </Button>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {plan ? (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="import-title">Title</Label>
+            <Input id="import-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">
+              {fileName}: {plan.chapters.length} {plan.chapters.length === 1 ? "section" : "sections"}, {words.toLocaleString()} words
+            </p>
+            <ul className="max-h-56 space-y-0.5 overflow-y-auto rounded-md border border-border p-2 text-sm">
+              {plan.chapters.map((c, i) => (
+                <li key={i} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">
+                    {c.kind === "chapter" ? `${c.title || "Untitled chapter"}` : `${c.title} (${c.kind === "front" ? "front matter" : "back matter"})`}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{countWords(c.html).toLocaleString()} words</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+      <div className="flex gap-2">
+        <Button disabled={!plan || !title.trim() || busy} onClick={() => void run()}>
+          <FileUp /> {busy ? "Working..." : "Import manuscript"}
+        </Button>
+        {onCancel ? (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 /** The options of the manuscript chosen in the list. */
 function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; words: number }) {
   const { navigate } = useApp();
@@ -169,7 +272,7 @@ function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; word
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button size="sm" onClick={() => navigate("outline")}>
+          <Button size="sm" onClick={() => navigate("roadmap")}>
             Open
           </Button>
           <Button variant="ghost" size="icon" title="Delete manuscript" onClick={() => void remove()}>
@@ -242,6 +345,9 @@ export function Manuscripts() {
             <Button size="sm" className="w-full" disabled={!workspace} onClick={() => setPane("new")}>
               <Plus /> New manuscript
             </Button>
+            <Button size="sm" variant="outline" className="w-full" disabled={!workspace} onClick={() => setPane("import")}>
+              <FileUp /> Import manuscript
+            </Button>
           </div>
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
             {manuscripts.length === 0 ? (
@@ -295,6 +401,8 @@ export function Manuscripts() {
               workspace={workspace}
               onCancel={manuscript ? () => setPane("manuscript") : null}
             />
+          ) : shown === "import" ? (
+            <ImportManuscriptForm key="import" workspace={workspace} onCancel={manuscript ? () => setPane("manuscript") : null} />
           ) : shown === "author" ? (
             <div className="max-w-xl">
               <WorkspaceForm key={workspace.id} workspace={workspace} />

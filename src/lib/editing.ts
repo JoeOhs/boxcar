@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript } from "@/db/schema";
+import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL } from "./providers";
 import { patchManuscript } from "./store";
 
 /** One pass of the editing workflow. */
@@ -70,31 +71,16 @@ export function stageInfo(stage: EditStage): StageInfo {
   return EDIT_STAGES.find((s) => s.id === stage) ?? EDIT_STAGES[0];
 }
 
-/** A different model for each pass out of the box; the author can change every one of them. */
-export const DEFAULT_STAGE_MODEL: Record<AiProvider, Record<EditStage, string>> = {
-  openai: { developmental: "gpt-4.1", line: "gpt-4o", copy: "gpt-4.1-mini", proofread: "gpt-4o-mini" },
-  anthropic: {
-    developmental: "claude-opus-4-1",
-    line: "claude-sonnet-4-5",
-    copy: "claude-haiku-4-5",
-    proofread: "claude-3-5-haiku-latest",
-  },
-};
-
-/** Suggestions offered in the model field; any model name the provider accepts can be typed instead. */
-export const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
-  openai: ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
-  anthropic: ["claude-opus-4-1", "claude-sonnet-4-5", "claude-sonnet-4-0", "claude-haiku-4-5", "claude-3-5-haiku-latest"],
-};
-
-/** The model for one pass: the author's choice, or the default for that pass. */
-export function modelForStage(provider: AiProvider, models: EditModels, stage: EditStage): string {
-  return models[provider]?.[stage]?.trim() || DEFAULT_STAGE_MODEL[provider][stage];
+/**
+ * The model for one pass: the author's choice, else the default for that pass, else the
+ * model on the author's key (providers such as Ollama have no defaults of their own).
+ */
+export function modelForStage(provider: AiProvider, models: EditModels, stage: EditStage, keyModel = ""): string {
+  return models[provider]?.[stage]?.trim() || DEFAULT_STAGE_MODEL[provider][stage] || keyModel || DEFAULT_MODEL[provider];
 }
-
 /** The AI settings to use for one pass: the author's key and provider with that pass's model. */
 export function settingsForStage(settings: AiSettings, models: EditModels, stage: EditStage): AiSettings {
-  return { ...settings, model: modelForStage(settings.provider, models, stage) };
+  return { ...settings, model: modelForStage(settings.provider, models, stage, settings.model) };
 }
 
 /** The models the author chose. undefined while loading. */

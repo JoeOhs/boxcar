@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { type AgentRole, type AiProvider, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
+import { type AgentRole, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
 import { stageInfo } from "./editing";
+import { providerNeedsKey, normalizeServerUrl } from "./providers";
 import { getAiSettings } from "./keyVault";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
@@ -25,22 +26,17 @@ const ROLE_PROMPT: Record<AgentRole, string> = {
     "You are the Ghostwriter at a small publishing house. You write prose for the author, in the author's own voice: continuing scenes, drafting new ones, writing dialogue and description, and rewriting passages on request. Match the voice, tense, point of view and style of the text you are shown, and keep to the facts of the story so far. When asked for prose, give the prose itself, ready to paste into the manuscript, with no preamble. The author has the final say on every word.",
 };
 
-export const DEFAULT_MODEL: Record<AiProvider, string> = {
-  openai: "gpt-4o",
-  anthropic: "claude-sonnet-4-5",
-};
-
-export const PROVIDER_LABEL: Record<AiProvider, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-};
-
 /** The author's AI settings. undefined while loading, null when no key has been saved. */
 export function useAiSettings(): AiSettings | null | undefined {
   return useLiveQuery(async () => {
     const settings = await getAiSettings();
-    return settings && settings.apiKey.trim() ? settings : null;
+    return settings && (settings.apiKey.trim() || !providerNeedsKey(settings.provider)) ? settings : null;
   }, []);
+}
+
+/** True when the AI can be asked now: online, or running on this computer (Ollama), which needs no connection. */
+export function aiReachable(settings: AiSettings | null | undefined, online: boolean): boolean {
+  return online || settings?.provider === "ollama";
 }
 
 export interface ChatTurn {
@@ -66,30 +62,35 @@ function errorText(body: ApiErrorBody | null, status: number, statusText: string
   return message ? `${message}` : `The AI provider answered ${status} ${statusText}`.trim();
 }
 
+/** Chat endpoints of the providers that speak the OpenAI chat format. */
+const HUGGING_FACE_CHAT_URL = "https://router.huggingface.co/v1/chat/completions";
+
+function openAiStyleEndpoint(settings: AiSettings): { url: string; headers: Record<string, string> } {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (settings.provider === "ollama") {
+    // Ollama answers the OpenAI chat format on its own address and takes no key.
+    return { url: `${normalizeServerUrl(settings.baseUrl ?? "")}/v1/chat/completions`, headers };
+  }
+  headers.Authorization = `Bearer ${settings.apiKey.trim()}`;
+  return {
+    url: settings.provider === "huggingface" ? HUGGING_FACE_CHAT_URL : "https://api.openai.com/v1/chat/completions",
+    headers,
+  };
+}
+
 /** Sends a conversation to the author's chosen provider and returns the reply text. */
 export async function askAi(settings: AiSettings, system: string, turns: ChatTurn[]): Promise<string> {
-  if (!navigator.onLine) {
+  const local = settings.provider === "ollama";
+  if (!local && !navigator.onLine) {
     throw new Error("You are offline. The AI staff need a connection; everything else keeps working.");
   }
-  if (!settings.apiKey.trim()) {
+  if (providerNeedsKey(settings.provider) && !settings.apiKey.trim()) {
     throw new Error("Add your AI key in Settings first.");
   }
 
   let response: Response;
   try {
-    if (settings.provider === "openai") {
-      response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${settings.apiKey.trim()}`,
-        },
-        body: JSON.stringify({
-          model: settings.model,
-          messages: [{ role: "system", content: system }, ...turns],
-        }),
-      });
-    } else {
+    if (settings.provider === "anthropic") {
       response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -105,12 +106,26 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
           messages: turns,
         }),
       });
+    } else {
+      const { url, headers } = openAiStyleEndpoint(settings);
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [{ role: "system", content: system }, ...turns],
+        }),
+      });
     }
   } catch {
-    throw new Error("Could not reach the AI provider. Check your connection and try again.");
+    throw new Error(
+      local
+        ? `Could not reach Ollama at ${normalizeServerUrl(settings.baseUrl ?? "")}. Check that Ollama is running and that it allows this app (set OLLAMA_ORIGINS).`
+        : "Could not reach the AI provider. Check your connection and try again.",
+    );
   }
 
-  if (settings.provider === "openai") {
+  if (settings.provider !== "anthropic") {
     const body = (await response.json().catch(() => null)) as OpenAiBody | null;
     if (!response.ok) throw new Error(errorText(body, response.status, response.statusText));
     const text = body?.choices?.[0]?.message?.content;
@@ -127,7 +142,6 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
   if (!text) throw new Error("The AI provider sent back an empty reply.");
   return text.trim();
 }
-
 /** System prompt for a role, with optional manuscript context appended. `persona` replaces the role's usual brief. */
 export function systemPrompt(role: AgentRole, context: string, persona?: string): string {
   const brief = persona ?? ROLE_PROMPT[role];
@@ -143,7 +157,7 @@ export interface ProposedEdit {
 }
 
 /** Finds the JSON in an AI reply (which may be wrapped in prose or code fences) and parses it. */
-function parseJson(reply: string, open: "[" | "{"): unknown {
+export function parseJson(reply: string, open: "[" | "{"): unknown {
   const close = open === "[" ? "]" : "}";
   const start = reply.indexOf(open);
   const end = reply.lastIndexOf(close);

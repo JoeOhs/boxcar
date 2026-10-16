@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { requestFormatPreset, useAiSettings } from "@/lib/ai";
+import { aiReachable, requestFormatPreset, useAiSettings } from "@/lib/ai";
 import { buildPreviewDocument, FONT_CHOICES, TRIM_SIZES } from "@/lib/epub";
 import { FORMAT_PRESETS, presetById, presetMatching } from "@/lib/formatPresets";
 import { useChapters, useOnline } from "@/lib/hooks";
@@ -128,11 +128,11 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
                 .
               </p>
             ) : (
-              <Button variant="outline" size="sm" className="w-full" disabled={!ai || choosing || !online} onClick={() => void chooseWithAi()}>
+              <Button variant="outline" size="sm" className="w-full" disabled={!ai || choosing || !aiReachable(ai, online)} onClick={() => void chooseWithAi()}>
                 <Sparkles /> {choosing ? "Choosing..." : "Let AI choose the preset"}
               </Button>
             )}
-            {!online ? <p className="text-xs text-muted-foreground">Offline: the AI needs a connection.</p> : null}
+            {!aiReachable(ai, online) ? <p className="text-xs text-muted-foreground">Offline: the AI needs a connection.</p> : null}
             {choice ? <p className={cn("text-xs", choice.ok ? "text-success" : "text-destructive")}>{choice.text}</p> : null}
           </Field>
           <Field label="Font" htmlFor="f-font">

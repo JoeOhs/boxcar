@@ -61,3 +61,16 @@ export function outlineToText(items: OutlineItem[]): string {
     })
     .join("\n");
 }
+
+/** An outline as a tree of plain objects, before it is stored: what the outline import reads and the frameworks provide. */
+export interface OutlineNode {
+  kind: OutlineKind;
+  title: string;
+  summary: string;
+  children: OutlineNode[];
+}
+
+/** How many nodes are in a tree. */
+export function countNodes(nodes: OutlineNode[]): number {
+  return nodes.reduce((sum, node) => sum + 1 + countNodes(node.children), 0);
+}

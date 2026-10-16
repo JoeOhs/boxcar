@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Send, Sparkles, Trash2, WifiOff } from "lucide-react";
 import { db, newId, type AgentMessage, type AgentRole, type Id } from "@/db/schema";
-import { AGENT_LABEL, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
+import { aiReachable, AGENT_LABEL, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
 import { useOnline } from "@/lib/hooks";
 import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ interface Props {
   manuscriptId: Id;
   role: AgentRole;
   /** Describes the manuscript for the AI; called each time a message is sent. */
-  getContext: () => string;
+  getContext: () => string | Promise<string>;
   /** Ready-made questions shown as buttons. */
   quickPrompts?: { label: string; prompt: string }[];
   /** Replaces the role's usual brief, e.g. for one editing pass. */
@@ -28,6 +28,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
   const { navigate } = useApp();
   const ai = useAiSettings();
   const online = useOnline();
+  const reachable = aiReachable(ai, online);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +68,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
         content: m.text,
       }));
       while (turns.length > 0 && turns[0].role !== "user") turns.shift();
-      const reply = await askAi(model ? { ...ai, model } : ai, systemPrompt(role, getContext(), persona), turns);
+      const reply = await askAi(model ? { ...ai, model } : ai, systemPrompt(role, await getContext(), persona), turns);
       await db.agentMessages.add({
         id: newId(),
         manuscriptId,
@@ -141,7 +142,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
             .
           </p>
         ) : null}
-        {!online ? (
+        {!reachable ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <WifiOff className="size-4" /> Offline. You can read past conversations; asking needs a connection.
           </p>
@@ -154,7 +155,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
                 key={q.label}
                 variant="outline"
                 size="sm"
-                disabled={busy || !online}
+                disabled={busy || !reachable}
                 onClick={() => void send(q.prompt)}
               >
                 {q.label}
@@ -177,7 +178,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
             rows={2}
             disabled={!ai}
           />
-          <Button size="icon" title="Send" disabled={!ai || busy || !online || !draft.trim()} onClick={() => void send(draft)}>
+          <Button size="icon" title="Send" disabled={!ai || busy || !reachable || !draft.trim()} onClick={() => void send(draft)}>
             <Send />
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import Dexie, { type Table } from "dexie";
 
 /**
- * Boxcar Studio local database (IndexedDB via Dexie).
+ * boxcar local database (IndexedDB via Dexie).
  *
  * Ownership chain: Workspace (pen name) -> Manuscript -> Chapter / OutlineItem.
  * IndexedDB does not enforce foreign keys, so the delete helpers at the bottom
@@ -119,6 +119,8 @@ export interface Manuscript {
   coverBrief?: CoverBrief;
   /** When the last export finished, if ever. */
   lastExportedAt?: Timestamp;
+  /** True once the Roadmap has been given its first cards. */
+  roadmapSeeded?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -224,14 +226,16 @@ export interface AgentMessage {
   createdAt: Timestamp;
 }
 
-export type AiProvider = "openai" | "anthropic";
+export type AiProvider = "openai" | "anthropic" | "huggingface" | "ollama";
 
 /** The author's own AI key as the AI calls use it: decrypted in memory only, never stored in this form. */
 export interface AiSettings {
   provider: AiProvider;
   apiKey: string;
-  /** Model name to send to the provider, e.g. "gpt-4o" or "claude-sonnet-4-5". */
+  /** Model name to send to the provider; the app's defaults are in src/lib/providers.ts. */
   model: string;
+  /** Address of the server, for providers that run on the author's own computer (Ollama). */
+  baseUrl?: string;
 }
 
 export type ImageProvider = "openai" | "google";
@@ -260,10 +264,12 @@ export interface StoredApiKey {
   /** An AiProvider for text keys, an ImageProvider for image keys. */
   provider: string;
   model: string;
-  /** The last four characters of the key, so it can be recognised in the list. */
+  /** Address of the server, for providers that run on the author's own computer (Ollama). */
+  baseUrl?: string;
+  /** The last four characters of the key, so it can be recognised in the list. Empty for providers that need no key. */
   tail: string;
   status: ApiKeyStatus;
-  /** The encrypted key. Absent once revoked. */
+  /** The encrypted key. Absent once revoked, and for providers that need no key. */
   secret?: { iv: Uint8Array; data: Uint8Array };
   createdAt: Timestamp;
   revokedAt?: Timestamp;
@@ -281,13 +287,46 @@ export interface CoverConcept {
   createdAt: Timestamp;
 }
 
+/** One card on a manuscript's Roadmap: a task in the column (stage) it belongs to, from outline to publish. */
+export interface RoadmapCard {
+  id: Id;
+  manuscriptId: Id;
+  /** The column the card sits in. Columns are the manuscript stages. */
+  column: ManuscriptStatus;
+  title: string;
+  /** The screen that does this task, if any, so the card can open it. */
+  screen?: "outline" | "write" | "edit" | "format" | "cover" | "export";
+  done: boolean;
+  /** Position within the column; sort ascending. */
+  order: number;
+  createdAt: Timestamp;
+}
+
+export type ResearchKind = "note" | "link" | "file";
+
+/** One item in a manuscript's research repository, kept beside the writing desk. */
+export interface ResearchNote {
+  id: Id;
+  manuscriptId: Id;
+  kind: ResearchKind;
+  title: string;
+  /** The note's text, or the text of an imported file. */
+  content: string;
+  /** The web address, for a link. */
+  url: string;
+  /** When true the Ghostwriter reads this item as background for the book. */
+  shareWithGhostwriter: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 /**
  * The model the author picked for each editing pass, per provider (a model name
  * only makes sense for the provider it belongs to). Stored under key "editModels".
  */
 export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
 
-/** App-wide preferences as key/value pairs ("editModels", "keyVaultKey", "activeKey:text", "activeKey:image", "activeWorkspaceId", "theme"). */
+/** App-wide preferences as key/value pairs ("editModels", "keyVaultKey", "activeKey:text", "activeKey:image", "activeWorkspaceId", "theme", "customWords"). */
 export interface Setting {
   key: string;
   value: unknown;
@@ -307,6 +346,8 @@ export class BoxcarDB extends Dexie {
   agentMessages!: Table<AgentMessage, Id>;
   coverConcepts!: Table<CoverConcept, Id>;
   apiKeys!: Table<StoredApiKey, Id>;
+  roadmapCards!: Table<RoadmapCard, Id>;
+  researchNotes!: Table<ResearchNote, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -330,6 +371,11 @@ export class BoxcarDB extends Dexie {
     // encrypted and moved here by migrateLegacyKeys() in src/lib/keyVault.ts.
     this.version(3).stores({
       apiKeys: "id, kind, status, createdAt",
+    });
+    // Version 4 adds the Roadmap cards and the research repository.
+    this.version(4).stores({
+      roadmapCards: "id, manuscriptId, column, [manuscriptId+column]",
+      researchNotes: "id, manuscriptId, updatedAt",
     });
   }
 }
@@ -362,7 +408,17 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
 export function deleteManuscript(manuscriptId: Id): Promise<void> {
   return db.transaction(
     "rw",
-    [db.manuscripts, db.outlineItems, db.chapters, db.revisions, db.suggestions, db.agentMessages, db.coverConcepts],
+    [
+      db.manuscripts,
+      db.outlineItems,
+      db.chapters,
+      db.revisions,
+      db.suggestions,
+      db.agentMessages,
+      db.coverConcepts,
+      db.roadmapCards,
+      db.researchNotes,
+    ],
     async () => {
       await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
       await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
@@ -370,6 +426,8 @@ export function deleteManuscript(manuscriptId: Id): Promise<void> {
       await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
       await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
       await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
+      await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
+      await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
       await db.manuscripts.delete(manuscriptId);
     },
   );

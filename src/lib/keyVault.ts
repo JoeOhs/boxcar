@@ -10,6 +10,7 @@ import {
   type ImageAiSettings,
   type StoredApiKey,
 } from "@/db/schema";
+import { providerNeedsKey } from "./providers";
 
 /**
  * The author's API keys, stored encrypted.
@@ -64,7 +65,7 @@ async function decrypt(secret: { iv: Uint8Array; data: Uint8Array }, key: Crypto
 
 /** The key in use among these: the one the author picked, else the newest that has not been revoked. */
 function resolveInUse(rows: StoredApiKey[], pickedId: Id | undefined): StoredApiKey | undefined {
-  const usable = rows.filter((r) => r.status === "active" && r.secret);
+  const usable = rows.filter((r) => r.status === "active" && (r.secret || !providerNeedsKey(r.provider)));
   return usable.find((r) => r.id === pickedId) ?? usable.sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
@@ -76,7 +77,10 @@ async function readInUse(kind: ApiKeyKind): Promise<{ row: StoredApiKey; apiKey:
     getSetting<CryptoKey>(VAULT_KEY),
   ]);
   const row = resolveInUse(rows, pickedId);
-  if (!row?.secret || !vaultKey) return undefined;
+  if (!row) return undefined;
+  // A provider that runs on this computer (Ollama) has no key to decrypt.
+  if (!row.secret && !providerNeedsKey(row.provider)) return { row, apiKey: "" };
+  if (!row.secret || !vaultKey) return undefined;
   try {
     const apiKey = await decrypt(row.secret, vaultKey);
     return apiKey ? { row, apiKey } : undefined;
@@ -88,7 +92,9 @@ async function readInUse(kind: ApiKeyKind): Promise<{ row: StoredApiKey; apiKey:
 /** The AI staff's key, decrypted, or undefined when none is stored. */
 export async function getAiSettings(): Promise<AiSettings | undefined> {
   const found = await readInUse("text");
-  return found ? { provider: found.row.provider as AiSettings["provider"], model: found.row.model, apiKey: found.apiKey } : undefined;
+  return found
+    ? { provider: found.row.provider as AiSettings["provider"], model: found.row.model, apiKey: found.apiKey, baseUrl: found.row.baseUrl }
+    : undefined;
 }
 
 /** The Book Cover workshop's key, decrypted, or undefined when none is stored. */
@@ -102,21 +108,26 @@ export async function getImageAiSettings(): Promise<ImageAiSettings | undefined>
 export interface NewApiKey {
   provider: string;
   model: string;
+  /** Empty for providers that need no key. */
   apiKey: string;
+  /** The server address, for providers that run on this computer. */
+  baseUrl?: string;
 }
 
 /** Encrypts and stores a key, and makes it the one in use for its kind. */
 export async function addApiKey(kind: ApiKeyKind, input: NewApiKey): Promise<StoredApiKey> {
   const plain = input.apiKey.trim();
-  if (!plain) throw new Error("Paste your API key first.");
+  const needsKey = providerNeedsKey(input.provider);
+  if (needsKey && !plain) throw new Error("Paste your API key first.");
   const row: StoredApiKey = {
     id: newId(),
     kind,
     provider: input.provider,
     model: input.model.trim(),
+    baseUrl: input.baseUrl?.trim() || undefined,
     tail: plain.slice(-4),
     status: "active",
-    secret: await encrypt(plain),
+    secret: needsKey ? await encrypt(plain) : undefined,
     createdAt: Date.now(),
   };
   await db.apiKeys.add(row);

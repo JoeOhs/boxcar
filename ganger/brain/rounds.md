@@ -1,5 +1,7 @@
 # Rounds
 
+This is an export: its files without their git history. The commits named below are in the project's own history in Ganger; to send the history too, use "Push to git" on the build instead of exporting.
+
 ## Round 1: built from the brief
 
 - Outcome: finished, and the checks passed
@@ -56,8 +58,27 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 2efbab16a4
 - Cost: $1.00
 
 - Integration: Both changes are in. `tsc --noEmit` passes and `vite build` succeeds. I haven't run the app in a browser, so the encryption and the Ghostwriter chat are untested at runtime. I haven't tried a real provider call either. (11 files)
+
+## Round 5: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Create or choose a workspace" (src/screens/WorkspaceGate.tsx · WorkspaceGate), the div "Boxcar Studio Choose the author or pen name you are worki..." on /: Default to dark mode on app launch and add the light/dark mode button to the workspace creation screen
+2. In "Create or choose a workspace" (src/screens/WorkspaceGate.tsx · WorkspaceGate), the heading "Boxcar Studio" on /: I want to change the name of the app to boxcar (the main name for the app), but also add "Publishing Studio" as the sub-name underneath it.
+3. On /, the div "JOE'S MANUSCRIPTS New manuscript": we need to integrate a way to import manuscripts.
+4. On /, the section "blah 0 words of 80,000 Open Stage Outlining Drafting Edit...": keep the + New Manuscript card for the creation/inception of a new manuscript but once a manuscript is created it should take you to a Kanban style roadmap for the manuscript from outline to publish
+5. In "Outline workshop" (src/screens/Outline.tsx · Outline), the header "Outline The bones of blah. Build acts, chapters, scenes a..." on /: add a feature that intelligently imports outlines/frameworks for manuscripts
+6. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the header "Edit Four passes in order: developmental, line, copy and ..." on /: add an export button that will export a draft for traditional human editing
+7. In "Writing desk" (src/screens/Write.tsx · Write), the aside "FRONT MATTER None yet CHAPTERS None yet BACK MATTER None yet" on /: Add a research repository that can be accessed without leaving the main writing screen, and the ghostwrite has access to for context
+8. In "Writing desk" (src/screens/Write.tsx · Write), the div "Nothing written yet Add your first chapter, or open an it..." on /: integrate a dictionary and thesaurus feature that can be utilized by selecting a word, as well as spell check
+9. On /, the div "Export epub": remove epub, just leaving "Export" for the button
+10. In "Book format and preview" (src/screens/Format.tsx · Format), the field on /: this scene break text box allows letters and numbers, which is not suitable for manuscript export. remove the box and just leave the preset dropdown menu, and add "None" as a preset option
+11. On /, the div "Provider OpenAI Anthropic": add compatability with hugging face and ollama
+Add to the plan: yes
+
+- Outcome: in progress
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

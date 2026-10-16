@@ -15,6 +15,7 @@ import {
 import { sortChapters } from "./chapters";
 import type { Genre } from "./genres";
 import { childKind } from "./outline";
+import { seedRoadmap } from "./roadmap";
 import { countWords } from "./text";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ export async function createManuscript(
   if (genre) manuscript.keywords = genre.keywords.slice(0, 7);
   await db.manuscripts.add(manuscript);
   if (genre && startOutline) await applyGenreStructure(manuscript.id, genre);
+  await seedRoadmap(manuscript.id);
   return manuscript;
 }
 

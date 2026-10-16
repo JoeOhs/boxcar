@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSetting, setSetting, type Id, type Manuscript, type Workspace } from "@/db/schema";
 import { useOnline } from "@/lib/hooks";
 
-export type Screen = "manuscripts" | "outline" | "write" | "edit" | "format" | "cover" | "export" | "settings";
+export type Screen = "manuscripts" | "roadmap" | "outline" | "write" | "edit" | "format" | "cover" | "export" | "settings";
 export type Theme = "light" | "dark";
 
 interface AppState {
@@ -44,7 +44,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // undefined = still loading, null = nothing saved yet.
   const activeWorkspaceId = useLiveQuery(async () => (await getSetting<Id>("activeWorkspaceId")) ?? null, []);
   const activeManuscriptId = useLiveQuery(async () => (await getSetting<Id>("activeManuscriptId")) ?? null, []);
-  const savedTheme = useLiveQuery(async () => (await getSetting<Theme>("theme")) ?? "light", [], "light");
+  // The app opens in dark mode; the light/dark button saves the author's choice.
+  const savedTheme = useLiveQuery(async () => (await getSetting<Theme>("theme")) ?? "dark", [], "dark");
   const workspaceRows = useLiveQuery(() => db.workspaces.orderBy("name").toArray(), []);
 
   const workspaces = useMemo(() => workspaceRows ?? [], [workspaceRows]);
@@ -61,7 +62,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const manuscripts = useMemo(() => manuscriptRows ?? [], [manuscriptRows]);
   const manuscript = manuscripts.find((m) => m.id === activeManuscriptId) ?? manuscripts[0];
 
-  const theme: Theme = savedTheme === "dark" ? "dark" : "light";
+  const theme: Theme = savedTheme === "light" ? "light" : "dark";
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);

@@ -16,10 +16,10 @@ It must do these on day one:
 Stack: Content / publishing. 6 override(s), each with its reason, are in ganger/brain/decisions.md.
 
 Latest rounds:
-- Round 3: asked for "Changes pinned on the running app:"; finished, and the checks passed
 - Round 4: asked for "Changes pinned on the running app:"; finished, and the checks passed
+- Round 5: asked for "Changes pinned on the running app:"; in progress
 
-Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md, rounds.md and notes.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks. notes.md is written by the person who asked for this app, and it wins over everything else here.
+Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md and rounds.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks.
 
 ganger/brain/ and this block are Ganger's record of the project. Read them; never change them. If something in them is wrong or missing, say so in your summary instead.
 <!-- ganger:brain:end -->

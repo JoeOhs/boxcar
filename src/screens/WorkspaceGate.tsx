@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowRight, BookOpen, Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import { db, type Id } from "@/db/schema";
 import { createWorkspace } from "@/lib/store";
 import { useApp } from "@/state/AppState";
+import { BackupControls } from "@/components/BackupControls";
+import { Brand, ThemeToggle } from "@/components/Brand";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,11 +45,11 @@ export function WorkspaceGate() {
   const hasWorkspaces = workspaces.length > 0;
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-muted/40 p-6">
-      <div className="w-full max-w-xl space-y-6">
-        <div className="space-y-2 text-center">
-          <BookOpen className="mx-auto size-8" />
-          <h1 className="font-serif text-3xl font-semibold tracking-tight">Boxcar Studio</h1>
+    <div className="relative flex h-full overflow-y-auto bg-muted/40 p-6">
+      <ThemeToggle className="absolute right-4 top-4" />
+      <div className="m-auto w-full max-w-xl space-y-6">
+        <div className="space-y-3 text-center">
+          <Brand large />
           <p className="text-sm text-muted-foreground">
             {hasWorkspaces
               ? "Choose the author or pen name you are working as, or create a new workspace."
@@ -102,6 +104,12 @@ export function WorkspaceGate() {
             </div>
           </Card>
         ) : null}
+
+        <Card className="space-y-2 p-5">
+          <h2 className="text-sm font-medium">Bring your work back</h2>
+          <p className="text-xs text-muted-foreground">Open a backup file you saved earlier to restore your workspaces and manuscripts.</p>
+          <BackupControls />
+        </Card>
       </div>
     </div>
   );

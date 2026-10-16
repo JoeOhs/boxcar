@@ -1,11 +1,11 @@
 {
-  "name": "Boxcar Studio",
-  "short_name": "Boxcar",
+  "name": "boxcar Publishing Studio",
+  "short_name": "boxcar",
   "description": "Outline, write, edit, format and export your books.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#faf8f4",
+  "background_color": "#1b1a18",
   "theme_color": "#3d4a5c",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
