@@ -1,0 +1,59 @@
+{
+  "name": "boxcar-studio-58313e",
+  "productName": "boxcar Publishing Studio",
+  "version": "1.0.0",
+  "description": "boxcar Publishing Studio, made with Ganger.",
+  "author": {
+    "name": "boxcar Publishing Studio"
+  },
+  "main": "main.js",
+  "private": true,
+  "devDependencies": {
+    "electron": "43.4.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "app.ganger.boxcarstudio58313e",
+    "productName": "boxcar Publishing Studio",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "site/**"
+    ],
+    "extraResources": [
+      {
+        "from": "server",
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  }
+}
