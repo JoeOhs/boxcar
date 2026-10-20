@@ -141,8 +141,21 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 290339243b
 - Cost: $0.28
 
 - Integration: All six round-9 changes are in, and the must-haves, backup, and docs are checked. `tsc --noEmit` and `vite build` both pass. I haven't run the app in a browser, so the drag and zoom behaviour and the AI calls are untested at runtime. (15 files)
+
+## Round 10: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Genre guide for new manuscripts" (src/components/GenrePicker.tsx · GenrePicker), the button "Non-fiction" on /: the word "non-fiction" doesn't quite fit in the button. fix it.
+2. On /, the div "1. Outline 0/3 Build the bones of the book. The book is h...": make scrolling bars minimalistic and theme corrected
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.09
+
+- Integration: Both round-10 changes are in, and the integration checks pass: `tsc --noEmit` is clean and no placeholder words remain in the source or docs. I have not run the app in a browser. (4 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

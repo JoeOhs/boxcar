@@ -87,7 +87,7 @@ export function GenrePicker({
               aria-pressed={category === c}
               onClick={() => pickCategory(c)}
               className={cn(
-                "flex-1 rounded px-3 text-sm transition-colors",
+                "flex-1 whitespace-nowrap rounded px-2 text-sm transition-colors",
                 category === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
               )}
             >

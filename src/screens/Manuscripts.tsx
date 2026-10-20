@@ -158,7 +158,7 @@ function NewManuscriptForm({
         </p>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+      <div className="grid gap-4 sm:grid-cols-[1fr_14rem]">
         <div className="space-y-1">
           <Label htmlFor="new-title">Title</Label>
           <Input id="new-title" value={title} autoFocus hint="Working title is fine" onChange={(e) => setTitle(e.target.value)} />
@@ -392,7 +392,7 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           <Plus /> Add another book to this series
         </Button>
       ) : null}
-      <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+      <div className="grid gap-4 sm:grid-cols-[1fr_14rem]">
         <GenrePicker
           key={manuscript.id}
           idPrefix="options"
