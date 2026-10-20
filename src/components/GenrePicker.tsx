@@ -37,8 +37,10 @@ export function GenreGuide({ genre }: { genre: Genre }) {
 }
 
 /**
- * The genre menu: choose fiction or non-fiction, then a genre, and read the guide
- * for it. Used when a manuscript is created and again in the manuscript's options.
+ * The genre menu: a Genre dropdown and the Fiction / Non-fiction buttons, then the
+ * guide for the chosen genre. It returns cells, not a box, so the caller lays them
+ * out in its own two-column grid (the Genre dropdown sits under the Title field and
+ * the buttons under the Type dropdown). The guide spans both columns.
  */
 export function GenrePicker({
   value,
@@ -52,6 +54,7 @@ export function GenrePicker({
 }) {
   const chosen = genreById(value);
   const [category, setCategory] = useState<GenreCategory>(chosen?.category ?? "fiction");
+  const matching = chosen && chosen.category === category ? chosen : undefined;
 
   function pickCategory(next: GenreCategory) {
     setCategory(next);
@@ -59,33 +62,10 @@ export function GenrePicker({
   }
 
   return (
-    <div className="space-y-3">
+    <>
       <div className="space-y-1">
-        <Label>Kind of book</Label>
-        <div className="inline-flex rounded-md border border-input p-0.5" role="group" aria-label="Kind of book">
-          {(Object.keys(CATEGORY_LABEL) as GenreCategory[]).map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={category === c}
-              onClick={() => pickCategory(c)}
-              className={cn(
-                "rounded px-3 py-1 text-sm transition-colors",
-                category === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
-              )}
-            >
-              {CATEGORY_LABEL[c]}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor={`${idPrefix}-genre`}>Genre</Label>
-        <Select
-          id={`${idPrefix}-genre`}
-          value={chosen && chosen.category === category ? chosen.id : ""}
-          onChange={(e) => onChange(e.target.value || undefined)}
-        >
+        <Label htmlFor={idPrefix + "-genre"}>Genre</Label>
+        <Select id={idPrefix + "-genre"} value={matching ? matching.id : ""} onChange={(e) => onChange(e.target.value || undefined)}>
           <option value="">No genre yet</option>
           {genresIn(category).map((g) => (
             <option key={g.id} value={g.id}>
@@ -94,7 +74,33 @@ export function GenrePicker({
           ))}
         </Select>
       </div>
-      {chosen && chosen.category === category ? <GenreGuide genre={chosen} /> : null}
-    </div>
+      <div className="space-y-1">
+        {/* An empty label keeps the buttons level with the Genre dropdown beside them. */}
+        <Label aria-hidden="true" className="invisible">
+          &nbsp;
+        </Label>
+        <div className="flex h-9 rounded-md border border-input p-0.5" role="group" aria-label="Fiction or non-fiction">
+          {(Object.keys(CATEGORY_LABEL) as GenreCategory[]).map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-pressed={category === c}
+              onClick={() => pickCategory(c)}
+              className={cn(
+                "flex-1 rounded px-3 text-sm transition-colors",
+                category === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {CATEGORY_LABEL[c]}
+            </button>
+          ))}
+        </div>
+      </div>
+      {matching ? (
+        <div className="sm:col-span-2">
+          <GenreGuide genre={matching} />
+        </div>
+      ) : null}
+    </>
   );
 }

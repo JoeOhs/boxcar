@@ -107,6 +107,9 @@ type Pane = "manuscript" | "new" | "import" | "author";
  * The form for a new manuscript: a title, the type (short story, novella, novel
  * or series), the genre guide, and the pen name. The pen name generator is part of
  * this form, so the pen name suggestions depend on the genre chosen here.
+ *
+ * Layout: Title beside Type; under Title the Genre dropdown, under Type the
+ * Fiction / Non-fiction buttons; the genre guide and the pen name below.
  */
 function NewManuscriptForm({
   workspace,
@@ -150,8 +153,8 @@ function NewManuscriptForm({
       <h2 className="font-serif text-lg font-semibold">{needsPenName ? "Choose a pen name" : "New manuscript"}</h2>
       {needsPenName ? (
         <p className="text-sm text-muted-foreground">
-          This workspace has no pen name yet. Generate one for the kind of book you are starting, or type your own. It goes on the
-          title page and the cover.
+          This workspace has no pen name yet. Choose the genre of the book you are starting, then generate a pen name for it or
+          type your own. It goes on the title page and the cover.
         </p>
       ) : null}
 
@@ -169,9 +172,11 @@ function NewManuscriptForm({
               </option>
             ))}
           </Select>
+          <p className="text-xs text-muted-foreground">{info.description}</p>
         </div>
+        <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
       </div>
-      <p className="-mt-3 text-xs text-muted-foreground">{info.description}</p>
+
       {type === "series" ? (
         <div className="space-y-1">
           <Label htmlFor="new-books">Number of books</Label>
@@ -188,7 +193,6 @@ function NewManuscriptForm({
         </div>
       ) : null}
 
-      <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
       {genre ? (
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1" checked={startOutline} onChange={(e) => setStartOutline(e.target.checked)} />
@@ -204,7 +208,7 @@ function NewManuscriptForm({
       <PenNamePicker
         key={genreId ?? "no-genre"}
         idPrefix="new"
-        title={title.trim() || "Your title"}
+        title={title}
         genre={genre}
         currentName={workspace.name}
         onChoose={(name) => patchWorkspace(workspace.id, { name })}
@@ -388,19 +392,20 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           <Plus /> Add another book to this series
         </Button>
       ) : null}
-      <GenrePicker
-        key={manuscript.id}
-        idPrefix="options"
-        value={manuscript.genre}
-        onChange={(genreId) => void patchManuscript(manuscript.id, { genre: genreId })}
-      />
+      <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+        <GenrePicker
+          key={manuscript.id}
+          idPrefix="options"
+          value={manuscript.genre}
+          onChange={(genreId) => void patchManuscript(manuscript.id, { genre: genreId })}
+        />
+      </div>
     </Card>
   );
 }
 
 export function Manuscripts() {
   const { workspace, manuscripts, manuscript, selectManuscript } = useApp();
-  // A workspace with no pen name yet opens on the pen name generator in the new manuscript menu.
   const [pane, setPane] = useState<Pane>("manuscript");
   // A workspace with no pen name yet opens on the pen name generator in the new manuscript menu.
   // With no manuscript to show, the right-hand side offers to create one.

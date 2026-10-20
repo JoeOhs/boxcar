@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Check, Download, ImageOff, KeyRound, Sparkles, Trash2, WifiOff } from "lucide-react";
 import { db, newId, type CoverBrief, type CoverConcept, type Manuscript } from "@/db/schema";
@@ -16,7 +16,7 @@ import {
 import { patchManuscript, patchWorkspace } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
-import { CoverMockup } from "@/components/CoverMockup";
+import { CoverImage, CoverMockup } from "@/components/CoverMockup";
 import { NoManuscript } from "@/components/NoManuscript";
 import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -27,17 +27,6 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-/** Shows a stored image file; the object URL is made and released with the component. */
-function BlobImage({ blob, alt, className }: { blob: Blob; alt: string; className?: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(blob);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [blob]);
-  return url ? <img src={url} alt={alt} className={className} /> : null;
-}
-
 function ConceptCard({ concept, manuscript, isCover }: { concept: CoverConcept; manuscript: Manuscript; isCover: boolean }) {
   const [showPrompt, setShowPrompt] = useState(false);
 
@@ -47,7 +36,9 @@ function ConceptCard({ concept, manuscript, isCover }: { concept: CoverConcept; 
 
   return (
     <Card className={cn("space-y-3 overflow-hidden p-3", isCover && "ring-2 ring-ring/50")}>
-      <BlobImage blob={concept.image} alt="Cover concept" className="mx-auto max-h-80 rounded border border-border" />
+      <div className="flex justify-center">
+        <CoverImage image={concept.image} alt="Cover concept" className="max-h-80 rounded border border-border" />
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <Button size="sm" variant={isCover ? "secondary" : "default"} disabled={isCover} onClick={() => void useAsCover()}>
           {isCover ? (
@@ -64,7 +55,7 @@ function ConceptCard({ concept, manuscript, isCover }: { concept: CoverConcept; 
           title="Download"
           onClick={() => {
             const extension = concept.image.type === "image/jpeg" ? "jpg" : "png";
-            downloadBlob(concept.image, `${fileSafeName(manuscript.title)}-cover.${extension}`);
+            downloadBlob(concept.image, fileSafeName(manuscript.title) + "-cover." + extension);
           }}
         >
           <Download />
@@ -123,7 +114,7 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
     setError(null);
     try {
       for (let i = 1; i <= count; i++) {
-        setBusy(count > 1 ? `Making picture ${i} of ${count}...` : "Making your cover picture...");
+        setBusy(count > 1 ? "Making picture " + i + " of " + count + "..." : "Making your cover picture...");
         const image = await generateCoverImage(ai, prompt);
         await db.coverConcepts.add({
           id: newId(),
@@ -146,21 +137,10 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Book Cover"
-        description={`Design the cover of ${manuscript.title} with image-generating AI.`}
+        description={"Design the cover of " + manuscript.title + " with image-generating AI."}
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-[24rem_1fr]">
         <section className="space-y-4">
-          <PenNamePicker
-            key={manuscript.genre ?? "no-genre"}
-            idPrefix="cover"
-            title={manuscript.title}
-            genre={genre}
-            currentName={workspace?.name ?? ""}
-            onChoose={async (name) => {
-              if (workspace) await patchWorkspace(workspace.id, { name });
-            }}
-          />
-
           {ai === null ? (
             <Card className="space-y-3 border-warning/50 p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -180,9 +160,9 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
             <h2 className="text-sm font-medium">Cover brief</h2>
             <p className="-mt-2 text-xs text-muted-foreground">
               {manuscript.title} by {author || "the author"}
-              {genre ? `, ${genre.label}` : ""}.{" "}
+              {genre ? ", " + genre.label : ""}.{" "}
               {genre
-                ? `Covers in this genre usually have ${genre.coverLook}.`
+                ? "Covers in this genre usually have " + genre.coverLook + "."
                 : "Choose a genre for this book in Manuscripts to get a look that suits it."}
             </p>
             <div className="space-y-1">
@@ -270,6 +250,17 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
             ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </Card>
+
+          <PenNamePicker
+            key={manuscript.genre ?? "no-genre"}
+            idPrefix="cover"
+            title={manuscript.title}
+            genre={genre}
+            currentName={workspace?.name ?? ""}
+            onChoose={async (name) => {
+              if (workspace) await patchWorkspace(workspace.id, { name });
+            }}
+          />
         </section>
 
         <section className="space-y-6">
@@ -277,7 +268,7 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
             <h2 className="text-sm font-medium">Current cover</h2>
             {manuscript.cover ? (
               <div className="flex items-start gap-4">
-                <BlobImage blob={manuscript.cover} alt="Current cover" className="max-h-72 rounded border border-border shadow-sm" />
+                <CoverImage image={manuscript.cover} alt="Current cover" className="max-h-72 rounded border border-border shadow-sm" />
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <p>This is the cover that goes into the epub.</p>
                   <Button variant="ghost" size="sm" onClick={() => void patchManuscript(manuscript.id, { cover: undefined })}>
@@ -291,6 +282,7 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
                 <div className="max-w-sm space-y-2 text-sm text-muted-foreground">
                   <p>
                     No cover picture yet. The mockup shows the title and pen name in the look of the genre, and needs no image key.
+                    Click it to zoom.
                   </p>
                   <p>Make some concepts, then choose one with Use as cover. You can also upload your own image under Export.</p>
                 </div>

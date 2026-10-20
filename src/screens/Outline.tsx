@@ -10,6 +10,7 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  Users,
 } from "lucide-react";
 import { deleteOutlineItem, type Id, type Manuscript, type OutlineItem, type OutlineKind } from "@/db/schema";
 import { BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
@@ -26,12 +27,14 @@ import {
   moveOutlineItem,
   patchOutlineItem,
 } from "@/lib/store";
+import { useStoryEntries, storyInfoToText } from "@/lib/storyInfo";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
 import { NoManuscript } from "@/components/NoManuscript";
 import { OutlineImport } from "@/components/OutlineImport";
 import { ScreenHeader } from "@/components/ScreenHeader";
+import { StoryInfoPanel } from "@/components/StoryInfoPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,7 +61,7 @@ function ItemForm({ item, onWrite }: { item: OutlineItem; onWrite: () => void })
           <Input
             id="o-title"
             value={title}
-            hint={`${OUTLINE_KIND_LABEL[item.kind]} title`}
+            hint={OUTLINE_KIND_LABEL[item.kind] + " title"}
             onChange={(e) => {
               setTitle(e.target.value);
               void patchOutlineItem(item.id, { title: e.target.value });
@@ -151,11 +154,15 @@ function SeriesBooks({ manuscript }: { manuscript: Manuscript }) {
   );
 }
 
+/** The panel open on the right of the outline: the outliner AI, or the story info. Only one is open at a time. */
+type RightPanel = "outliner" | "story" | null;
+
 function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const { navigate, setChapterId } = useApp();
   const items = useOutlineItems(manuscript.id);
+  const storyEntries = useStoryEntries(manuscript.id);
   const [selectedId, setSelectedId] = useState<Id | null>(null);
-  const [showAi, setShowAi] = useState(true);
+  const [rightPanel, setRightPanel] = useState<RightPanel>("outliner");
   const [notice, setNotice] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
 
@@ -165,6 +172,10 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const rows = useMemo(() => flattenOutline(items ?? []), [items]);
   const selected = items?.find((i) => i.id === selectedId);
 
+  function togglePanel(panel: "outliner" | "story") {
+    setRightPanel((current) => (current === panel ? null : panel));
+  }
+
   async function add(parentId: Id | null) {
     // The top level follows the book type: scenes for a short story, acts for the rest.
     const created = await addOutlineItem(manuscript.id, parentId, parentId === null ? info.topKind : undefined);
@@ -172,7 +183,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   }
 
   async function remove(item: OutlineItem) {
-    if (!window.confirm(`Delete "${item.title || "Untitled"}" and everything under it? Written chapters are kept.`)) return;
+    if (!window.confirm("Delete \"" + (item.title || "Untitled") + "\" and everything under it? Written chapters are kept.")) return;
     await deleteOutlineItem(item.id);
     setSelectedId(null);
   }
@@ -188,7 +199,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
     // A short story's scenes are its chapters: each becomes a piece to write.
     const made = await chaptersFromOutline(rows.map((row) => row.item), type === "short-story" ? ["scene"] : ["chapter"]);
     const noun = type === "short-story" ? "scene" : "chapter";
-    setNotice(made > 0 ? `Created ${made} ${noun}${made === 1 ? "" : "s"} in Write.` : `Every outline ${noun} already has its text.`);
+    setNotice(made > 0 ? "Created " + made + " " + noun + (made === 1 ? "" : "s") + " in Write." : "Every outline " + noun + " already has its text.");
   }
 
   const toolbar = (
@@ -222,7 +233,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Outline"
-        description={`The bones of ${manuscript.title}. ${info.outlineNote}`}
+        description={"The bones of " + manuscript.title + ". " + info.outlineNote}
         actions={
           <>
             <Button variant={showImport ? "secondary" : "outline"} size="sm" onClick={() => setShowImport((v) => !v)}>
@@ -231,7 +242,10 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
             <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={() => void makeChapters()}>
               Create chapters from outline
             </Button>
-            <Button variant={showAi ? "secondary" : "outline"} size="sm" onClick={() => setShowAi((v) => !v)}>
+            <Button variant={rightPanel === "story" ? "secondary" : "outline"} size="sm" aria-pressed={rightPanel === "story"} onClick={() => togglePanel("story")}>
+              <Users /> Story info
+            </Button>
+            <Button variant={rightPanel === "outliner" ? "secondary" : "outline"} size="sm" aria-pressed={rightPanel === "outliner"} onClick={() => togglePanel("outliner")}>
               <Sparkles /> Outliner
             </Button>
           </>
@@ -274,7 +288,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
                 <button
                   key={item.id}
                   onClick={() => setSelectedId(item.id)}
-                  style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
+                  style={{ paddingLeft: 0.5 + depth * 1.25 + "rem" }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm transition-colors",
                     item.id === selectedId ? "bg-accent" : "hover:bg-accent/50",
@@ -303,19 +317,26 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
           )}
         </section>
 
-        {showAi ? (
+        {rightPanel === "story" ? (
+          <aside className="w-80 shrink-0 border-l border-border">
+            <StoryInfoPanel manuscriptId={manuscript.id} />
+          </aside>
+        ) : null}
+
+        {rightPanel === "outliner" ? (
           <aside className="w-80 shrink-0 border-l border-border">
             <AgentChat
               manuscriptId={manuscript.id}
               role="outliner"
               getContext={() =>
                 [
-                  `Title: ${manuscript.title}`,
+                  "Title: " + manuscript.title,
                   genreContext(genre),
-                  manuscript.description ? `Description: ${manuscript.description}` : "",
-                  `Outline:\n${outlineToText(items ?? [])}`,
+                  manuscript.description ? "Description: " + manuscript.description : "",
+                  "Outline:\n" + outlineToText(items ?? []),
+                  storyEntries && storyEntries.length > 0 ? "Story info:\n" + storyInfoToText(storyEntries) : "",
                   selected
-                    ? `Selected item: [${selected.kind}] ${selected.title}\nSummary: ${selected.summary}\nNotes: ${selected.notes}`
+                    ? "Selected item: [" + selected.kind + "] " + selected.title + "\nSummary: " + selected.summary + "\nNotes: " + selected.notes
                     : "",
                 ]
                   .filter(Boolean)

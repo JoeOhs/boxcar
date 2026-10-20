@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 
 /**
  * The "Workspaces" button at the bottom of the left menu. It opens a small
- * panel to pick another workspace or add a new one.
+ * panel to pick another workspace or add a new one. In the collapsed menu it is
+ * an icon, and the panel opens beside it.
  */
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const { workspaces, workspace, selectWorkspace, navigate } = useApp();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -52,7 +53,12 @@ export function WorkspaceSwitcher() {
   return (
     <div ref={rootRef} className="relative">
       {open ? (
-        <div className="absolute bottom-full left-0 right-0 z-20 mb-2 space-y-2 rounded-lg border border-border bg-card p-2 shadow-lg">
+        <div
+          className={cn(
+            "absolute z-20 space-y-2 rounded-lg border border-border bg-card p-2 shadow-lg",
+            collapsed ? "bottom-0 left-full ml-2 w-64" : "bottom-full left-0 right-0 mb-2",
+          )}
+        >
           <p className="px-2 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Switch workspace</p>
           <div className="max-h-48 space-y-0.5 overflow-y-auto">
             {workspaces.map((w) => (
@@ -64,7 +70,7 @@ export function WorkspaceSwitcher() {
                   w.id === workspace?.id && "font-medium",
                 )}
               >
-                <span className="min-w-0 truncate">{w.name}</span>
+                <span className="min-w-0 truncate">{w.name || "No pen name yet"}</span>
                 {w.id === workspace?.id ? <Check className="size-4 shrink-0" /> : null}
               </button>
             ))}
@@ -86,11 +92,20 @@ export function WorkspaceSwitcher() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground [&_svg]:size-4"
+        title="Workspaces"
+        aria-label="Workspaces"
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground [&_svg]:size-4",
+          collapsed ? "justify-center px-0" : "px-3",
+        )}
       >
         <FolderOpen />
-        <span className="flex-1 text-left">Workspaces</span>
-        <ChevronUp className={cn("transition-transform", open ? "rotate-180" : "")} />
+        {collapsed ? null : (
+          <>
+            <span className="flex-1 text-left">Workspaces</span>
+            <ChevronUp className={cn("transition-transform", open ? "rotate-180" : "")} />
+          </>
+        )}
       </button>
     </div>
   );

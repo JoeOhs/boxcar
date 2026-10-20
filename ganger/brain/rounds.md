@@ -124,8 +124,25 @@ these manuscript types should also change how the outline is presented, for exam
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: d398a27e39
 - Cost: $0.34
 
 - Integration: Round 8 is implemented and the project typechecks and builds (`tsc --noEmit` and `vite build` both pass). I have not run the app in a browser, so the drag-and-drop, the speech voices and the AI calls are untested at runtime. (24 files)
+
+## Round 9: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "Choose a pen name This workspace has no pen name yet. Gen...": Grey out the generate pen name button until a genre is chosen. pen names and book cover mockups are generated based on the chosen genre. book cover mockups should be generated utilizing the AI image generator API key. the book covers should be clickable to zoom.
+2. In "Genre guide for new manuscripts" (src/components/GenrePicker.tsx · GenrePicker), the div "Kind of book Fiction Non-fiction" on /: remove "kind of book" and move fiction/non-fiction button underneath the "Type" dropdown menu
+3. In "Genre guide for new manuscripts" (src/components/GenrePicker.tsx · GenrePicker), the div "Genre No genre yet Fantasy Science fiction Mystery and cr..." on /: Move the "Genre" dropdown menu underneath the "Title" menu and align with the fiction/non-fiction buttons.
+4. On /, the div "Workspaces Settings": add a chevron to move the left-hand menu inward, creating more space and reducing the menu to show icons only
+5. In "Outline workshop" (src/screens/Outline.tsx · Outline), the header "Outline The bones of the agent. A novel is built in acts,..." on /: create a button that opens a menu in the right-hand side for storing character, location, and situational information
+6. In "Book Cover workshop" (src/screens/BookCover.tsx · BookCover), the div "Pen name Owen Harlan is the pen name for this workspace. ..." on /: move the pen name generator for book mockups below the cover brief menu
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.28
+
+- Integration: All six round-9 changes are in, and the must-haves, backup, and docs are checked. `tsc --noEmit` and `vite build` both pass. I haven't run the app in a browser, so the drag and zoom behaviour and the AI calls are untested at runtime. (15 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

@@ -170,6 +170,24 @@ export interface OutlineItem {
   updatedAt: Timestamp;
 }
 
+/** What the story info panel keeps: a character, a location or a situation (what is going on in the story). */
+export type StoryEntryKind = "character" | "location" | "situation";
+
+/**
+ * One entry in the Outline's story info: a character, a place or a situation the
+ * book relies on. It is kept beside the outline and shared with the outliner AI.
+ */
+export interface StoryEntry {
+  id: Id;
+  manuscriptId: Id;
+  kind: StoryEntryKind;
+  name: string;
+  /** What the author notes about it: who they are, what the place is like, what is happening. */
+  description: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 export type ChapterKind = "front" | "chapter" | "back";
 export type ChapterStatus = "draft" | "revised" | "final";
 
@@ -363,6 +381,7 @@ export class BoxcarDB extends Dexie {
   workspaces!: Table<Workspace, Id>;
   manuscripts!: Table<Manuscript, Id>;
   outlineItems!: Table<OutlineItem, Id>;
+  storyEntries!: Table<StoryEntry, Id>;
   chapters!: Table<Chapter, Id>;
   revisions!: Table<Revision, Id>;
   suggestions!: Table<Suggestion, Id>;
@@ -403,6 +422,10 @@ export class BoxcarDB extends Dexie {
     // Version 5 indexes books by series and by the book they were translated from.
     this.version(5).stores({
       manuscripts: "id, workspaceId, status, updatedAt, seriesId, translationOf",
+    });
+    // Version 6 adds the Outline's story info: characters, locations and situations.
+    this.version(6).stores({
+      storyEntries: "id, manuscriptId, kind, updatedAt",
     });
   }
 }
@@ -446,6 +469,7 @@ export async function deleteManuscript(manuscriptId: Id): Promise<void> {
     [
       db.manuscripts,
       db.outlineItems,
+      db.storyEntries,
       db.chapters,
       db.revisions,
       db.suggestions,
@@ -456,6 +480,7 @@ export async function deleteManuscript(manuscriptId: Id): Promise<void> {
     ],
     async () => {
       await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
+      await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
       await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
       await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
       await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
