@@ -12,13 +12,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { deleteOutlineItem, type Id, type Manuscript, type OutlineItem, type OutlineKind } from "@/db/schema";
+import { BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
 import { genreById, genreContext } from "@/lib/genres";
-import { useOutlineItems } from "@/lib/hooks";
+import { useOutlineItems, useSeriesVolumes } from "@/lib/hooks";
 import { flattenOutline, OUTLINE_KIND_LABEL, outlineToText } from "@/lib/outline";
 import {
   addOutlineItem,
+  addSeriesBookTo,
   applyGenreStructure,
-  applyThreeActTemplate,
+  applyStartTemplate,
   chapterForOutlineItem,
   chaptersFromOutline,
   moveOutlineItem,
@@ -112,6 +114,43 @@ function ItemForm({ item, onWrite }: { item: OutlineItem; onWrite: () => void })
   );
 }
 
+/**
+ * For a series, the books of the series as a choice (Book 1, Book 2, Book 3 ...).
+ * Choosing one opens its outline; the last button adds another book.
+ */
+function SeriesBooks({ manuscript }: { manuscript: Manuscript }) {
+  const { selectManuscript } = useApp();
+  const books = useSeriesVolumes(manuscript.seriesId);
+  if (!manuscript.seriesId || !books || books.length === 0) return null;
+
+  async function addBook() {
+    if (!manuscript.seriesId) return;
+    const book = await addSeriesBookTo(manuscript.seriesId);
+    if (book) selectManuscript(book.id);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-6 py-2" role="group" aria-label="Books in this series">
+      <span className="mr-1 text-xs text-muted-foreground">Book</span>
+      {books.map((book) => (
+        <Button
+          key={book.id}
+          size="sm"
+          variant={book.id === manuscript.id ? "default" : "outline"}
+          aria-pressed={book.id === manuscript.id}
+          title={book.title}
+          onClick={() => selectManuscript(book.id)}
+        >
+          {book.volumeNumber ?? "?"}
+        </Button>
+      ))}
+      <Button size="sm" variant="ghost" onClick={() => void addBook()}>
+        <Plus /> Add a book
+      </Button>
+    </div>
+  );
+}
+
 function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const { navigate, setChapterId } = useApp();
   const items = useOutlineItems(manuscript.id);
@@ -121,11 +160,14 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
   const [showImport, setShowImport] = useState(false);
 
   const genre = genreById(manuscript.genre);
+  const type = bookTypeOf(manuscript);
+  const info = BOOK_TYPES[type];
   const rows = useMemo(() => flattenOutline(items ?? []), [items]);
   const selected = items?.find((i) => i.id === selectedId);
 
   async function add(parentId: Id | null) {
-    const created = await addOutlineItem(manuscript.id, parentId);
+    // The top level follows the book type: scenes for a short story, acts for the rest.
+    const created = await addOutlineItem(manuscript.id, parentId, parentId === null ? info.topKind : undefined);
     setSelectedId(created.id);
   }
 
@@ -143,8 +185,10 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
 
   async function makeChapters() {
     // In outline order, so the chapters land in the book in the order the author planned them.
-    const made = await chaptersFromOutline(rows.map((row) => row.item));
-    setNotice(made > 0 ? `Created ${made} chapter${made === 1 ? "" : "s"} in Write.` : "Every outline chapter already has its text.");
+    // A short story's scenes are its chapters: each becomes a piece to write.
+    const made = await chaptersFromOutline(rows.map((row) => row.item), type === "short-story" ? ["scene"] : ["chapter"]);
+    const noun = type === "short-story" ? "scene" : "chapter";
+    setNotice(made > 0 ? `Created ${made} ${noun}${made === 1 ? "" : "s"} in Write.` : `Every outline ${noun} already has its text.`);
   }
 
   const toolbar = (
@@ -178,7 +222,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Outline"
-        description={`The bones of ${manuscript.title}. Build acts, chapters, scenes and beats, then write from them.`}
+        description={`The bones of ${manuscript.title}. ${info.outlineNote}`}
         actions={
           <>
             <Button variant={showImport ? "secondary" : "outline"} size="sm" onClick={() => setShowImport((v) => !v)}>
@@ -202,6 +246,7 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
           }}
         />
       ) : null}
+      <SeriesBooks manuscript={manuscript} />
       {notice ? (
         <div className="border-b border-border bg-muted px-6 py-1.5 text-xs text-muted-foreground">{notice}</div>
       ) : null}
@@ -212,15 +257,16 @@ function OutlineBody({ manuscript }: { manuscript: Manuscript }) {
             {items === undefined ? null : rows.length === 0 ? (
               <div className="space-y-3 p-4 text-sm text-muted-foreground">
                 <p>
-                  The outline is empty. Add your first item, or begin with {genre ? "the structure for your genre" : "a classic three-act structure"}.
+                  The outline is empty. Add your first {OUTLINE_KIND_LABEL[info.topKind].toLowerCase()}, or begin with{" "}
+                  {genre ? "the structure for your genre" : type === "short-story" ? "a scene list" : "a classic three-act structure"}.
                 </p>
                 {genre ? (
-                  <Button size="sm" className="mr-2" onClick={() => void applyGenreStructure(manuscript.id, genre)}>
+                  <Button size="sm" className="mr-2" onClick={() => void applyGenreStructure(manuscript.id, genre, type)}>
                     Start with the {genre.label.toLowerCase()} structure
                   </Button>
                 ) : null}
-                <Button variant="outline" size="sm" onClick={() => void applyThreeActTemplate(manuscript.id)}>
-                  Start with three acts
+                <Button variant="outline" size="sm" onClick={() => void applyStartTemplate(manuscript.id, type)}>
+                  {info.startLabel}
                 </Button>
               </div>
             ) : (

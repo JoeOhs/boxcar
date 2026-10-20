@@ -19,6 +19,10 @@ Authors
 - a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)
 - a genre guide (fiction and non-fiction) when creating a new manuscript
 
+The same, as the person wrote it:
+
+> outline, write, edit, format, and export
+
 ## Shape
 
 - Accounts: optional

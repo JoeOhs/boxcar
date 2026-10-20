@@ -7,6 +7,7 @@ import {
   type ChapterStatus,
   type Id,
   type Manuscript,
+  type ManuscriptType,
   type OutlineItem,
   type OutlineKind,
   type ResearchKind,
@@ -14,8 +15,9 @@ import {
   type Revision,
   type Workspace,
 } from "@/db/schema";
+import { BOOK_TYPES, SCENE_LIST, THREE_ACTS } from "./bookTypes";
 import { sortChapters } from "./chapters";
-import type { Genre } from "./genres";
+import { genreById, type Genre } from "./genres";
 import { childKind, type OutlineNode } from "./outline";
 import { seedRoadmap } from "./roadmap";
 import { countWords } from "./text";
@@ -24,11 +26,15 @@ import { countWords } from "./text";
 // Workspaces (pen names) and manuscripts
 // ---------------------------------------------------------------------------
 
+/**
+ * Creates a workspace (an author or pen name). The name may be blank: a workspace
+ * made with "Generate a pen name" gets its name in the new-manuscript menu.
+ */
 export async function createWorkspace(name: string): Promise<Workspace> {
   const now = Date.now();
   const workspace: Workspace = {
     id: newId(),
-    name: name.trim() || "Untitled author",
+    name: name.trim(),
     bio: "",
     createdAt: now,
     updatedAt: now,
@@ -41,16 +47,22 @@ export async function patchWorkspace(id: Id, changes: Partial<Omit<Workspace, "i
   await db.workspaces.update(id, { ...changes, updatedAt: Date.now() });
 }
 
+function defaultCopyright(penName: string): string {
+  return `Copyright © ${new Date().getFullYear()} ${penName.trim() || "the author"}. All rights reserved.`;
+}
+
 /**
  * Creates a book in a workspace. With a genre from the genre guide the book starts
  * with that genre, its target length and its suggested keywords; `startOutline`
- * also fills the outline with the genre's structure.
+ * also fills the outline with the genre's structure. The type sets the default
+ * length when there is no genre.
  */
 export async function createManuscript(
   workspace: Workspace,
   title: string,
   genre?: Genre,
   startOutline = false,
+  type: ManuscriptType = "novel",
 ): Promise<Manuscript> {
   const now = Date.now();
   const manuscript: Manuscript = {
@@ -62,19 +74,105 @@ export async function createManuscript(
     language: "en",
     isbn: "",
     keywords: [],
-    copyright: `Copyright © ${new Date().getFullYear()} ${workspace.name}. All rights reserved.`,
+    copyright: defaultCopyright(workspace.name),
     status: "outlining",
+    type,
     genre: genre?.id,
-    targetWordCount: genre?.targetWords ?? 0,
+    targetWordCount: genre?.targetWords ?? BOOK_TYPES[type].targetWords,
     format: { ...DEFAULT_FORMAT },
     createdAt: now,
     updatedAt: now,
   };
   if (genre) manuscript.keywords = genre.keywords.slice(0, 7);
   await db.manuscripts.add(manuscript);
-  if (genre && startOutline) await applyGenreStructure(manuscript.id, genre);
+  if (genre && startOutline) await applyGenreStructure(manuscript.id, genre, type);
   await seedRoadmap(manuscript.id);
   return manuscript;
+}
+
+/**
+ * Creates a series: a container row plus one book per volume (Book 1, Book 2 ...).
+ * Each book gets the genre, length and (when asked) the genre's outline.
+ * Returns the container and its books in order.
+ */
+export async function createSeries(
+  workspace: Workspace,
+  title: string,
+  bookCount: number,
+  genre?: Genre,
+  startOutline = false,
+): Promise<{ series: Manuscript; books: Manuscript[] }> {
+  const now = Date.now();
+  const cleanTitle = title.trim() || "Untitled series";
+  const series: Manuscript = {
+    id: newId(),
+    workspaceId: workspace.id,
+    title: cleanTitle,
+    subtitle: "",
+    description: "",
+    language: "en",
+    isbn: "",
+    keywords: genre ? genre.keywords.slice(0, 7) : [],
+    copyright: defaultCopyright(workspace.name),
+    status: "outlining",
+    type: "series",
+    genre: genre?.id,
+    targetWordCount: 0,
+    format: { ...DEFAULT_FORMAT },
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.manuscripts.add(series);
+  const books: Manuscript[] = [];
+  const count = Math.max(1, Math.min(12, Math.floor(bookCount) || 1));
+  for (let n = 1; n <= count; n++) {
+    books.push(await addSeriesBook(series, n, cleanTitle, genre, startOutline));
+  }
+  return { series, books };
+}
+
+async function addSeriesBook(
+  series: Manuscript,
+  volumeNumber: number,
+  seriesTitle: string,
+  genre: Genre | undefined,
+  startOutline: boolean,
+): Promise<Manuscript> {
+  const now = Date.now();
+  const book: Manuscript = {
+    id: newId(),
+    workspaceId: series.workspaceId,
+    title: `${seriesTitle}: Book ${volumeNumber}`,
+    subtitle: "",
+    description: "",
+    language: series.language,
+    isbn: "",
+    keywords: series.keywords,
+    copyright: series.copyright,
+    status: "outlining",
+    type: "novel",
+    seriesId: series.id,
+    volumeNumber,
+    genre: series.genre,
+    targetWordCount: genre?.targetWords ?? BOOK_TYPES.series.targetWords,
+    format: { ...DEFAULT_FORMAT },
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.manuscripts.add(book);
+  if (genre && startOutline) await applyGenreStructure(book.id, genre, "novel");
+  await seedRoadmap(book.id);
+  return book;
+}
+
+/** Adds the next book to a series, with the same genre and settings as the others. */
+export async function addSeriesBookTo(seriesId: Id): Promise<Manuscript | undefined> {
+  const series = await db.manuscripts.get(seriesId);
+  if (!series || series.type !== "series") return undefined;
+  const books = await db.manuscripts.where("seriesId").equals(seriesId).toArray();
+  const next = books.length ? Math.max(...books.map((b) => b.volumeNumber ?? 0)) + 1 : 1;
+  const genre = genreById(series.genre);
+  return addSeriesBook(series, next, series.title, genre, false);
 }
 
 export async function patchManuscript(id: Id, changes: Partial<Omit<Manuscript, "id">>): Promise<void> {
@@ -168,12 +266,6 @@ export async function moveOutlineItem(
   }
 }
 
-const THREE_ACTS: { title: string; points: string[] }[] = [
-  { title: "Act I: Setup", points: ["Opening image", "Inciting incident", "First plot point"] },
-  { title: "Act II: Confrontation", points: ["Rising action", "Midpoint", "Crisis"] },
-  { title: "Act III: Resolution", points: ["Climax", "Resolution"] },
-];
-
 /** Adds a set of top-level parts, each with its points as beats beneath it, after anything already in the outline. */
 async function addOutlineParts(
   manuscriptId: Id,
@@ -249,18 +341,27 @@ export async function addOutlineTree(manuscriptId: Id, nodes: OutlineNode[]): Pr
   return items.length;
 }
 
-/** Fills an empty outline with the classic three-act structure. */
-export function applyThreeActTemplate(manuscriptId: Id): Promise<void> {
+/**
+ * Fills an empty outline with the book type's starting structure: a scene list for
+ * a short story, the three-act structure for everything else.
+ */
+export function applyStartTemplate(manuscriptId: Id, type: ManuscriptType): Promise<void> {
+  if (type === "short-story") {
+    return addOutlineParts(manuscriptId, SCENE_LIST.map((title) => ({ title, points: [] })), "scene");
+  }
   return addOutlineParts(manuscriptId, THREE_ACTS, "act");
 }
 
 /**
  * Fills the outline with the structure from the genre guide: acts with beats for
  * fiction, chapters with key points for non-fiction (so "Create chapters from
- * outline" turns a non-fiction structure straight into chapters to write).
+ * outline" turns a non-fiction structure straight into chapters to write). A
+ * short story gets the same sections as a flat list of scenes.
  */
-export function applyGenreStructure(manuscriptId: Id, genre: Genre): Promise<void> {
-  return addOutlineParts(manuscriptId, genre.structure, genre.category === "fiction" ? "act" : "chapter");
+export function applyGenreStructure(manuscriptId: Id, genre: Genre, type: ManuscriptType = "novel"): Promise<void> {
+  const partKind: OutlineKind =
+    type === "short-story" ? "scene" : genre.category === "fiction" ? "act" : "chapter";
+  return addOutlineParts(manuscriptId, genre.structure, partKind);
 }
 // ---------------------------------------------------------------------------
 // Chapters
@@ -329,11 +430,14 @@ export async function chapterForOutlineItem(item: OutlineItem): Promise<Id> {
   return chapter.id;
 }
 
-/** Creates a chapter for every outline chapter that has none yet. Returns how many were made. */
-export async function chaptersFromOutline(items: OutlineItem[]): Promise<number> {
+/**
+ * Creates a chapter for every outline item of the given kinds that has none yet
+ * (chapters for a novel, scenes for a short story). Returns how many were made.
+ */
+export async function chaptersFromOutline(items: OutlineItem[], kinds: OutlineKind[] = ["chapter"]): Promise<number> {
   let made = 0;
   for (const item of items) {
-    if (item.kind !== "chapter") continue;
+    if (!kinds.includes(item.kind)) continue;
     const before = item.chapterId ? await db.chapters.get(item.chapterId) : undefined;
     if (before) continue;
     await chapterForOutlineItem(item);

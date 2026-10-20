@@ -11,7 +11,7 @@ export function NoManuscript() {
       <h2 className="font-serif text-xl font-semibold">No manuscript yet</h2>
       <p className="max-w-sm text-sm text-muted-foreground">
         {workspace
-          ? `Create a manuscript in the ${workspace.name} workspace to start.`
+          ? `Create a manuscript in ${workspace.name ? `the ${workspace.name} workspace` : "this workspace"} to start.`
           : "Create a workspace for an author or pen name, then add a manuscript to it."}
       </p>
       <Button onClick={() => navigate("manuscripts")}>Go to Manuscripts</Button>

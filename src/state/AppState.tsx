@@ -3,7 +3,17 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, getSetting, setSetting, type Id, type Manuscript, type Workspace } from "@/db/schema";
 import { useOnline } from "@/lib/hooks";
 
-export type Screen = "manuscripts" | "roadmap" | "outline" | "write" | "edit" | "format" | "cover" | "export" | "settings";
+export type Screen =
+  | "manuscripts"
+  | "roadmap"
+  | "outline"
+  | "write"
+  | "edit"
+  | "format"
+  | "cover"
+  | "export"
+  | "translate"
+  | "settings";
 export type Theme = "light" | "dark";
 
 interface AppState {
@@ -17,7 +27,7 @@ interface AppState {
   workspaces: Workspace[];
   /** The author / pen name being worked in. */
   workspace: Workspace | undefined;
-  /** Manuscripts of the active workspace. */
+  /** The books of the active workspace (series containers are not books, so they are left out). */
   manuscripts: Manuscript[];
   /** The book being worked on. */
   manuscript: Manuscript | undefined;
@@ -55,7 +65,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async () => {
       if (!workspace) return [];
       const rows = await db.manuscripts.where("workspaceId").equals(workspace.id).toArray();
-      return rows.sort((a, b) => a.title.localeCompare(b.title));
+      return rows.filter((m) => m.type !== "series").sort((a, b) => a.title.localeCompare(b.title));
     },
     [workspace?.id],
   );

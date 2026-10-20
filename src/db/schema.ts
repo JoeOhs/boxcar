@@ -30,6 +30,15 @@ export interface Workspace {
 
 export type ManuscriptStatus = "outlining" | "drafting" | "editing" | "formatting" | "ready";
 
+/**
+ * What kind of book a manuscript is. A "series" is a container: it groups its
+ * books (each a manuscript with `seriesId`) and holds no text of its own.
+ */
+export type ManuscriptType = "short-story" | "novella" | "novel" | "series";
+
+/** Where a translated chapter is in its review: translated, proofread by AI, then approved by the author. */
+export type TranslationState = "pending" | "translated" | "proofread" | "approved";
+
 /** The four passes of the editing workflow, in the order they are done. */
 export type EditStage = "developmental" | "line" | "copy" | "proofread";
 
@@ -106,6 +115,16 @@ export interface Manuscript {
   keywords: string[];
   copyright: string;
   status: ManuscriptStatus;
+  /** Absent on books made before types existed, which are novels. */
+  type?: ManuscriptType;
+  /** For a book in a series: the id of the series container. */
+  seriesId?: Id;
+  /** For a book in a series: its place in the series (1, 2, 3 ...). */
+  volumeNumber?: number;
+  /** For a translation: the id of the manuscript it was translated from. */
+  translationOf?: Id;
+  /** For a translation: the language's name as the AI is told it, e.g. "Swahili". */
+  languageName?: string;
   /** Id of the genre chosen for the book (see src/lib/genres.ts), fiction or non-fiction. Absent when none was chosen. */
   genre?: string;
   /** Target word count for the whole book; 0 = none. */
@@ -166,6 +185,10 @@ export interface Chapter {
   status: ChapterStatus;
   /** Position in the book; sort ascending. */
   order: number;
+  /** For a translated chapter: the chapter of the original it is translated from. */
+  sourceChapterId?: Id;
+  /** For a translated chapter: where it is in its review. */
+  translationState?: TranslationState;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -377,6 +400,10 @@ export class BoxcarDB extends Dexie {
       roadmapCards: "id, manuscriptId, column, [manuscriptId+column]",
       researchNotes: "id, manuscriptId, updatedAt",
     });
+    // Version 5 indexes books by series and by the book they were translated from.
+    this.version(5).stores({
+      manuscripts: "id, workspaceId, status, updatedAt, seriesId, translationOf",
+    });
   }
 }
 
@@ -404,8 +431,16 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
   await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [stage]: model } });
 }
 
-/** Delete a manuscript and everything that belongs to it. */
-export function deleteManuscript(manuscriptId: Id): Promise<void> {
+/**
+ * Delete a manuscript and everything that belongs to it. Deleting a series also
+ * deletes its books, and deleting a book also deletes its translations.
+ */
+export async function deleteManuscript(manuscriptId: Id): Promise<void> {
+  const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
+  const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
+  for (const childId of [...children, ...translations]) {
+    await deleteManuscript(childId);
+  }
   return db.transaction(
     "rw",
     [

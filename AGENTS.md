@@ -16,10 +16,12 @@ It must do these on day one:
 Stack: Content / publishing. 6 override(s), each with its reason, are in ganger/brain/decisions.md.
 
 Latest rounds:
-- Round 4: asked for "Changes pinned on the running app:"; finished, and the checks passed
-- Round 5: asked for "Changes pinned on the running app:"; finished, and the checks passed
+- Round 7: finished, and the checks passed
+- Round 8: asked for "Changes pinned on the running app:"; finished, and the checks passed
 
 Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md and rounds.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks.
+
+After every round Ganger runs this project's `test` script, when it has one, and a failing test goes back for repair. Keep tests passing, and never weaken or delete a test to make it pass: fix the code.
 
 ganger/brain/ and this block are Ganger's record of the project. Read them; never change them. If something in them is wrong or missing, say so in your summary instead.
 <!-- ganger:brain:end -->

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, FileDown, ImageUp, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, FileDown, Headphones, ImageUp, Trash2 } from "lucide-react";
 import { db, type Manuscript } from "@/db/schema";
 import { downloadBlob, fileSafeName } from "@/lib/download";
 import { buildEpub } from "@/lib/epub";
 import { useChapters } from "@/lib/hooks";
+import { getAiSettings } from "@/lib/keyVault";
+import { AI_VOICES, buildAudiobook, DEFAULT_AI_VOICE, NEEDS_OPENAI_KEY } from "@/lib/narration";
 import { patchManuscript } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
@@ -13,9 +15,73 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 const KDP_KEYWORD_LIMIT = 7;
+
+/**
+ * The audiobook: each chapter read in the AI voice, one MP3 per chapter, saved
+ * together in a zip. It is a post-publishing option, so it uses the author's
+ * OpenAI key and needs a connection.
+ */
+function AudiobookCard({ manuscript }: { manuscript: Manuscript }) {
+  const { online } = useApp();
+  const [voice, setVoice] = useState(DEFAULT_AI_VOICE);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function make() {
+    setBusy(true);
+    setResult(null);
+    setProgress("Starting...");
+    try {
+      const settings = await getAiSettings();
+      if (!settings || settings.provider !== "openai") throw new Error(NEEDS_OPENAI_KEY);
+      if (!online) throw new Error("You are offline. The audiobook needs a connection; your text is safe on this computer.");
+      const fresh = await db.manuscripts.get(manuscript.id);
+      if (!fresh) throw new Error("This manuscript no longer exists.");
+      const rows = await db.chapters.where("manuscriptId").equals(manuscript.id).toArray();
+      const zip = await buildAudiobook(settings.apiKey, fresh, rows, voice, setProgress);
+      const filename = `${fileSafeName(fresh.title)}-audiobook.zip`;
+      downloadBlob(zip, filename);
+      setResult({ ok: true, text: `Saved ${filename}: one MP3 per chapter.` });
+    } catch (e) {
+      setResult({ ok: false, text: e instanceof Error ? e.message : "The audiobook could not be made." });
+    } finally {
+      setBusy(false);
+      setProgress("");
+    }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <h2 className="flex items-center gap-2 text-sm font-medium">
+        <Headphones className="size-4" /> Audiobook
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        {manuscript.title} read aloud by an AI voice, one MP3 per chapter. Uses your OpenAI key, and each chapter is billed by the provider.
+      </p>
+      <div className="flex gap-2">
+        <Select className="h-8 w-32" aria-label="Audiobook voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
+          {AI_VOICES.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </Select>
+        <Button size="sm" disabled={busy} onClick={() => void make()}>
+          <Headphones /> {busy ? "Recording..." : "Make audiobook"}
+        </Button>
+      </div>
+      {busy && progress ? <p className="text-xs text-muted-foreground">{progress}</p> : null}
+      {result ? <p className={cn("text-sm", result.ok ? "text-success" : "text-destructive")}>{result.text}</p> : null}
+    </Card>
+  );
+}
+
+
 const KDP_DESCRIPTION_LIMIT = 4000;
 
 function BookDetails({ manuscript }: { manuscript: Manuscript }) {
@@ -252,6 +318,7 @@ function ExportBody({ manuscript }: { manuscript: Manuscript }) {
         <BookDetails manuscript={manuscript} />
         <div className="space-y-6">
           <CoverPicker manuscript={manuscript} />
+          <AudiobookCard manuscript={manuscript} />
           <Card className="space-y-3 p-5">
             <h2 className="text-sm font-medium">Before you publish</h2>
             <ul className="space-y-1.5">

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   Download,
+  Languages,
   LayoutTemplate,
   SquareKanban,
   Library,
@@ -24,6 +25,7 @@ import { Edit } from "@/screens/Edit";
 import { BookCover } from "@/screens/BookCover";
 import { Format } from "@/screens/Format";
 import { Export } from "@/screens/Export";
+import { Translate } from "@/screens/Translate";
 import { Settings } from "@/screens/Settings";
 
 const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
@@ -35,6 +37,7 @@ const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
   { screen: "format", label: "Format", icon: <LayoutTemplate /> },
   { screen: "cover", label: "Book Cover", icon: <Palette /> },
   { screen: "export", label: "Export", icon: <Download /> },
+  { screen: "translate", label: "Translate", icon: <Languages /> },
 ];
 
 function CurrentScreen({ screen }: { screen: Screen }) {
@@ -55,6 +58,8 @@ function CurrentScreen({ screen }: { screen: Screen }) {
       return <BookCover />;
     case "export":
       return <Export />;
+    case "translate":
+      return <Translate />;
     case "settings":
       return <Settings />;
   }
@@ -96,8 +101,8 @@ export default function App() {
         <div className="space-y-2 px-4 pb-3">
           <div>
             <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Workspace</p>
-            <p className="truncate rounded-md bg-accent px-3 py-2 font-serif text-sm font-semibold" title={workspace.name}>
-              {workspace.name}
+            <p className="truncate rounded-md bg-accent px-3 py-2 font-serif text-sm font-semibold" title={workspace.name || "No pen name yet"}>
+              {workspace.name || "No pen name yet"}
             </p>
           </div>
         </div>

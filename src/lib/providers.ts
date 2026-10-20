@@ -23,7 +23,7 @@ export const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 /** A different model for each editing pass out of the box. An empty entry means "use the model on the key". */
 export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, string>>> = {
-  openai: { developmental: "gpt-6.1-sol-pro", line: "gpt-6.1-sol", copy: "gpt-6-luna-pro", proofread: "gpt-6-luna" },
+  openai: { developmental: "gpt-6.1-sol-pro", line: "gpt-6.1-sol", copy: "gpt-6-sol", proofread: "gpt-6-sol-pro" },
   anthropic: {
     developmental: "claude-fable-5-1",
     line: "claude-opus-5-5",
@@ -34,9 +34,16 @@ export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, s
   ollama: {},
 };
 
+/**
+ * The model the AI voice uses to read a manuscript aloud (narration preview in
+ * Write, and the audiobook export). It is an OpenAI speech model, so it needs the
+ * author's OpenAI key. The author can change it here.
+ */
+export const NARRATION_MODEL = "gpt-4o-mini-tts";
+
 /** Suggestions offered in the model field; any model name the provider accepts can be typed instead. */
 export const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
-  openai: ["gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-luna", "gpt-6-luna-pro"],
+  openai: ["gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-sol", "gpt-6-sol-pro"],
   anthropic: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   huggingface: [
     "meta-llama/Llama-3.3-70B-Instruct",

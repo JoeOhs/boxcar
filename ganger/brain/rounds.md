@@ -80,9 +80,52 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
-- Commit: a1fa2298e7
+- Commit: 591ba2c64d
 - Cost: $2.32
 
 - Integration: All of Round 5's open items are now wired and the project type-checks and builds. I have not run the app in a browser, so the drag and drop, the lookup card, and the file pickers are untested at runtime. (18 files)
+
+## Round 6: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "Ask the AI" on /: Change this button to "Ask the Editor"
+2. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the heading "Ask the AI for a developmental pass on this chapter" on /: Change "Ask the AI..." to "Ask the Editor..."
+3. In "Writing desk" (src/screens/Write.tsx · Write), the list "Chapter status" on /: chapter status dropdown menu should be hard-coded to the status of the kanban and editing stages
+4. In "Genre guide for new manuscripts" (src/components/GenrePicker.tsx · GenrePicker), the list "No genre yet Fantasy Science fiction Mystery and crime Th..." on /: genres in the manuscript do not match genres listed in the formatting section - pull genres from a source like Reedsy.com to have a more complete genre list and make sure the genre selected is cohesive with each section of the app
+5. In "Writing desk" (src/screens/Write.tsx · Write), the button "Open the Ghostwriter" on /: test whether the ghostwriter agent can work directly from an outline by creating a test outline and manuscript
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Commit: 560112671b
+- Cost: $0.18
+
+- Integration: All five Round 6 changes are in. `tsc --noEmit` and `vite build` both pass. I have not run the app in a browser, so the UI behaviour is checked by reading the code only. (11 files)
+
+## Round 7: a revision
+
+- Outcome: finished, and the checks passed
+- Commit: 1410ffdb4f
+
+Went back to round 5 (back to commit 591ba2c64d).
+
+## Round 8: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Create or choose a workspace" (src/screens/WorkspaceGate.tsx · WorkspaceGate), the div "Create a workspace Author or pen name Create" on /: I want to change the create a workspace menu. I want 2 options for the user once the application opens: "New Workspace" and any workspaces already created and saved on the users machine. Creating a new workspace opens a "create workspace" menu, where the user can input their pen name, and a button that generates a pen name for them. The pen name generator takes the user into a new workspace, to the pen name generator within the manuscripts menu. The pen name generator becomes part of the "new manuscript" menu and pen name generation becomes dependent upon the genre of book. The user can select from a brief list of pen names and have the ability to view their generated pen names on book cover mockups according to the genre chosen. Users that manually input their author/pen names must also have access to the book cover mockups as well.
+
+The second post-publishing feature is AI Voice Narration for audiobook exportation. VoiceStudio can be used for the narration at https://github.com/debpalash/VoiceStudio
+
+AI voice narration should also be a feature within the writing screen so that the user can preview their manuscript.
+2. On /, the menu "Manuscripts Roadmap Outline Write Edit Format Book Cover ...": I want to integrate post-publishing options for authors. One post-publishing feature is manuscript translation, where the user can translate their book into any language they choose. CopyTranslator can be used for the work at https://github.com/CopyTranslator/CopyTranslator
+
+The translation agent responsible for translating the manuscripts must not "one-shot" the work, but break the work down chapter by chapter so the user can review and opt for AI proofreading.
+3. On /, the div "dig 0 words of 100,000 Open Stage Outlining Drafting Edit...": manuscripts should have a "type" for example: short story, novella, novel, and series'
+these manuscript types should also change how the outline is presented, for example: a series like a trilogy should reflect in the outline by having the ability to select book 1, 2, and 3
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.34
+
+- Integration: Round 8 is implemented and the project typechecks and builds (`tsc --noEmit` and `vite build` both pass). I have not run the app in a browser, so the drag-and-drop, the speech voices and the AI calls are untested at runtime. (24 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

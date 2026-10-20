@@ -13,10 +13,12 @@ import {
   IMAGE_PROVIDER_LABEL,
   useImageAiSettings,
 } from "@/lib/imageAi";
-import { patchManuscript } from "@/lib/store";
+import { patchManuscript, patchWorkspace } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
+import { CoverMockup } from "@/components/CoverMockup";
 import { NoManuscript } from "@/components/NoManuscript";
+import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -148,6 +150,17 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto p-6 lg:grid-cols-[24rem_1fr]">
         <section className="space-y-4">
+          <PenNamePicker
+            key={manuscript.genre ?? "no-genre"}
+            idPrefix="cover"
+            title={manuscript.title}
+            genre={genre}
+            currentName={workspace?.name ?? ""}
+            onChoose={async (name) => {
+              if (workspace) await patchWorkspace(workspace.id, { name });
+            }}
+          />
+
           {ai === null ? (
             <Card className="space-y-3 border-warning/50 p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -273,10 +286,15 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No cover yet. Make some concepts, then choose one with Use as cover. You can also upload your own image
-                under Export.
-              </p>
+              <div className="flex flex-wrap items-start gap-5">
+                <CoverMockup title={manuscript.title} author={author} genre={genre} />
+                <div className="max-w-sm space-y-2 text-sm text-muted-foreground">
+                  <p>
+                    No cover picture yet. The mockup shows the title and pen name in the look of the genre, and needs no image key.
+                  </p>
+                  <p>Make some concepts, then choose one with Use as cover. You can also upload your own image under Export.</p>
+                </div>
+              </div>
             )}
           </div>
 

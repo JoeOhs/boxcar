@@ -8,16 +8,19 @@ import {
   type Id,
   type Manuscript,
   type ManuscriptStatus,
+  type ManuscriptType,
   type Workspace,
 } from "@/db/schema";
+import { BOOK_TYPE_ORDER, BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
 import { IMPORT_ACCEPT } from "@/lib/documents";
 import { genreById } from "@/lib/genres";
 import { importManuscript, planImport, type ImportPlan } from "@/lib/importManuscript";
-import { createManuscript, patchManuscript, patchWorkspace } from "@/lib/store";
+import { addSeriesBookTo, createManuscript, createSeries, patchManuscript, patchWorkspace } from "@/lib/store";
 import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { GenrePicker } from "@/components/GenrePicker";
+import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,13 +37,15 @@ const STATUS_LABEL: Record<ManuscriptStatus, string> = {
   ready: "Ready to publish",
 };
 
+const SERIES_BOOK_COUNTS = [2, 3, 4, 5, 6, 7, 8, 9];
+
 function WorkspaceForm({ workspace }: { workspace: Workspace }) {
   const [name, setName] = useState(workspace.name);
   const [bio, setBio] = useState(workspace.bio);
   const { workspaces, selectWorkspace } = useApp();
 
   async function remove() {
-    if (!window.confirm(`Delete ${workspace.name} and every manuscript in it? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${workspace.name || "this workspace"} and every manuscript in it? This cannot be undone.`)) return;
     const next = workspaces.find((w) => w.id !== workspace.id);
     await deleteWorkspace(workspace.id);
     if (next) selectWorkspace(next.id);
@@ -55,7 +60,7 @@ function WorkspaceForm({ workspace }: { workspace: Workspace }) {
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            if (e.target.value.trim()) void patchWorkspace(workspace.id, { name: e.target.value.trim() });
+            void patchWorkspace(workspace.id, { name: e.target.value.trim() });
           }}
         />
       </div>
@@ -98,21 +103,42 @@ function TargetInput({ id, value }: { id: Id; value: number }) {
 
 type Pane = "manuscript" | "new" | "import" | "author";
 
-/** The form for a new manuscript: a title and the genre guide. */
-function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
+/**
+ * The form for a new manuscript: a title, the type (short story, novella, novel
+ * or series), the genre guide, and the pen name. The pen name generator is part of
+ * this form, so the pen name suggestions depend on the genre chosen here.
+ */
+function NewManuscriptForm({
+  workspace,
+  onCancel,
+  needsPenName,
+}: {
+  workspace: Workspace;
+  onCancel: (() => void) | null;
+  /** True when the workspace has no pen name yet, so the form opens on the generator. */
+  needsPenName: boolean;
+}) {
   const { selectManuscript, navigate } = useApp();
   const [title, setTitle] = useState("");
+  const [type, setType] = useState<ManuscriptType>("novel");
+  const [bookCount, setBookCount] = useState(3);
   const [genreId, setGenreId] = useState<string | undefined>(undefined);
   const [startOutline, setStartOutline] = useState(true);
   const [busy, setBusy] = useState(false);
   const genre = genreById(genreId);
+  const info = BOOK_TYPES[type];
 
   async function create() {
     if (!title.trim() || busy) return;
     setBusy(true);
     try {
-      const created = await createManuscript(workspace, title, genre, startOutline);
-      selectManuscript(created.id);
+      if (type === "series") {
+        const { books } = await createSeries(workspace, title, bookCount, genre, startOutline && !!genre);
+        selectManuscript(books[0].id);
+      } else {
+        const created = await createManuscript(workspace, title, genre, startOutline && !!genre, type);
+        selectManuscript(created.id);
+      }
       navigate("roadmap");
     } finally {
       setBusy(false);
@@ -120,12 +146,48 @@ function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCa
   }
 
   return (
-    <Card className="max-w-2xl space-y-4 p-5">
-      <h2 className="font-serif text-lg font-semibold">New manuscript</h2>
-      <div className="space-y-1">
-        <Label htmlFor="new-title">Title</Label>
-        <Input id="new-title" value={title} autoFocus hint="Working title is fine" onChange={(e) => setTitle(e.target.value)} />
+    <Card className="max-w-2xl space-y-5 p-5">
+      <h2 className="font-serif text-lg font-semibold">{needsPenName ? "Choose a pen name" : "New manuscript"}</h2>
+      {needsPenName ? (
+        <p className="text-sm text-muted-foreground">
+          This workspace has no pen name yet. Generate one for the kind of book you are starting, or type your own. It goes on the
+          title page and the cover.
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
+        <div className="space-y-1">
+          <Label htmlFor="new-title">Title</Label>
+          <Input id="new-title" value={title} autoFocus hint="Working title is fine" onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="new-type">Type</Label>
+          <Select id="new-type" value={type} onChange={(e) => setType(e.target.value as ManuscriptType)}>
+            {BOOK_TYPE_ORDER.map((t) => (
+              <option key={t} value={t}>
+                {BOOK_TYPES[t].label}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
+      <p className="-mt-3 text-xs text-muted-foreground">{info.description}</p>
+      {type === "series" ? (
+        <div className="space-y-1">
+          <Label htmlFor="new-books">Number of books</Label>
+          <Select id="new-books" className="w-32" value={bookCount} onChange={(e) => setBookCount(Number(e.target.value))}>
+            {SERIES_BOOK_COUNTS.map((n) => (
+              <option key={n} value={n}>
+                {n} books
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Each book is made as Book 1, Book 2 and so on. Choose the book to outline from the Outline screen.
+          </p>
+        </div>
+      ) : null}
+
       <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
       {genre ? (
         <label className="flex items-start gap-2 text-sm">
@@ -138,9 +200,19 @@ function NewManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCa
           </span>
         </label>
       ) : null}
+
+      <PenNamePicker
+        key={genreId ?? "no-genre"}
+        idPrefix="new"
+        title={title.trim() || "Your title"}
+        genre={genre}
+        currentName={workspace.name}
+        onChoose={(name) => patchWorkspace(workspace.id, { name })}
+      />
+
       <div className="flex gap-2">
         <Button disabled={!title.trim() || busy} onClick={() => void create()}>
-          <Plus /> Create manuscript
+          <Plus /> {type === "series" ? "Create series" : "Create manuscript"}
         </Button>
         {onCancel ? (
           <Button variant="ghost" onClick={onCancel}>
@@ -197,7 +269,7 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
     <Card className="max-w-2xl space-y-4 p-5">
       <h2 className="font-serif text-lg font-semibold">Import a manuscript</h2>
       <p className="text-sm text-muted-foreground">
-        Choose a Word document (.docx), an epub, an HTML file, or a text or Markdown file. It is added to {workspace.name} and cut into
+        Choose a Word document (.docx), an epub, an HTML file, or a text or Markdown file. It is added to {workspace.name || "this workspace"} and cut into
         chapters at its headings, or at lines such as "Chapter 1".
       </p>
       <Button asChild variant="outline" className={cn(busy && "pointer-events-none opacity-50")}>
@@ -253,12 +325,19 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
 }
 
 /** The options of the manuscript chosen in the list. */
-function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; words: number }) {
-  const { navigate } = useApp();
+function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
+  const { navigate, selectManuscript } = useApp();
+  const type = bookTypeOf(manuscript);
 
   async function remove() {
     if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
     await deleteManuscript(manuscript.id);
+  }
+
+  async function addBook() {
+    if (!manuscript.seriesId) return;
+    const book = await addSeriesBookTo(manuscript.seriesId);
+    if (book) selectManuscript(book.id);
   }
 
   return (
@@ -267,6 +346,9 @@ function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; word
         <div className="min-w-0">
           <h2 className="truncate font-serif text-xl font-semibold">{manuscript.title}</h2>
           <p className="text-xs text-muted-foreground">
+            {BOOK_TYPES[type].label}
+            {seriesTitle && manuscript.volumeNumber ? ` - Book ${manuscript.volumeNumber} of ${seriesTitle}` : ""}
+            {" - "}
             {words.toLocaleString()} words
             {manuscript.targetWordCount ? ` of ${manuscript.targetWordCount.toLocaleString()}` : ""}
           </p>
@@ -301,6 +383,11 @@ function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; word
           <TargetInput id={manuscript.id} value={manuscript.targetWordCount} />
         </div>
       </div>
+      {manuscript.seriesId ? (
+        <Button variant="outline" size="sm" onClick={() => void addBook()}>
+          <Plus /> Add another book to this series
+        </Button>
+      ) : null}
       <GenrePicker
         key={manuscript.id}
         idPrefix="options"
@@ -313,9 +400,12 @@ function ManuscriptOptions({ manuscript, words }: { manuscript: Manuscript; word
 
 export function Manuscripts() {
   const { workspace, manuscripts, manuscript, selectManuscript } = useApp();
+  // A workspace with no pen name yet opens on the pen name generator in the new manuscript menu.
   const [pane, setPane] = useState<Pane>("manuscript");
+  // A workspace with no pen name yet opens on the pen name generator in the new manuscript menu.
   // With no manuscript to show, the right-hand side offers to create one.
-  const shown: Pane = pane === "manuscript" && !manuscript ? "new" : pane;
+  const needsPenName = !!workspace && !workspace.name.trim();
+  const shown: Pane = pane === "manuscript" && (!manuscript || needsPenName) ? "new" : pane;
 
   const wordCounts = useLiveQuery(async () => {
     const counts: Record<Id, number> = {};
@@ -330,17 +420,52 @@ export function Manuscripts() {
     return counts;
   }, [manuscripts.map((m) => m.id).join(",")]);
 
+  // Series containers are not books, so they are read separately from the list of books.
+  const seriesRows = useLiveQuery(
+    async () => (workspace ? db.manuscripts.where("workspaceId").equals(workspace.id).filter((m) => m.type === "series").toArray() : []),
+    [workspace?.id],
+  );
+  const series = [...(seriesRows ?? [])].sort((a, b) => a.title.localeCompare(b.title));
+  const standalone = manuscripts.filter((m) => !m.seriesId);
+
+  function bookButton(m: Manuscript, indent: boolean) {
+    const active = shown === "manuscript" && m.id === manuscript?.id;
+    const genre = genreById(m.genre);
+    const label = indent && m.volumeNumber ? `Book ${m.volumeNumber}` : m.title;
+    return (
+      <button
+        key={m.id}
+        onClick={() => {
+          selectManuscript(m.id);
+          setPane("manuscript");
+        }}
+        aria-current={active ? "true" : undefined}
+        className={cn(
+          "w-full rounded-md px-3 py-2 text-left transition-colors",
+          indent && "ml-3 w-[calc(100%-0.75rem)] py-1.5",
+          active ? "bg-accent" : "hover:bg-accent/50",
+        )}
+      >
+        <span className={cn("block truncate font-serif text-sm font-semibold", indent && "font-sans text-xs font-medium")}>{label}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {(wordCounts?.[m.id] ?? 0).toLocaleString()} words - {STATUS_LABEL[m.status]}
+          {genre ? ` - ${genre.label}` : ""}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Manuscripts"
-        description={workspace ? `Every book by ${workspace.name}.` : "Every book in this workspace."}
+        description={workspace ? `Every book by ${workspace.name || "this workspace"}.` : "Every book in this workspace."}
       />
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-72 shrink-0 flex-col border-r border-border">
           <div className="space-y-2 border-b border-border p-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {workspace ? `${workspace.name}'s manuscripts` : "Manuscripts"}
+              {workspace ? `${workspace.name || "This workspace"}'s manuscripts` : "Manuscripts"}
             </p>
             <Button size="sm" className="w-full" disabled={!workspace} onClick={() => setPane("new")}>
               <Plus /> New manuscript
@@ -350,31 +475,22 @@ export function Manuscripts() {
             </Button>
           </div>
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-            {manuscripts.length === 0 ? (
+            {manuscripts.length === 0 && series.length === 0 ? (
               <p className="p-2 text-sm text-muted-foreground">No manuscripts in this workspace yet.</p>
             ) : null}
-            {manuscripts.map((m) => {
-              const active = shown === "manuscript" && m.id === manuscript?.id;
-              const genre = genreById(m.genre);
+            {standalone.map((m) => bookButton(m, false))}
+            {series.map((s) => {
+              const books = manuscripts
+                .filter((m) => m.seriesId === s.id)
+                .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
               return (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    selectManuscript(m.id);
-                    setPane("manuscript");
-                  }}
-                  aria-current={active ? "true" : undefined}
-                  className={cn(
-                    "w-full rounded-md px-3 py-2 text-left transition-colors",
-                    active ? "bg-accent" : "hover:bg-accent/50",
-                  )}
-                >
-                  <span className="block truncate font-serif text-sm font-semibold">{m.title}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {(wordCounts?.[m.id] ?? 0).toLocaleString()} words - {STATUS_LABEL[m.status]}
-                    {genre ? ` - ${genre.label}` : ""}
-                  </span>
-                </button>
+                <div key={s.id} className="space-y-0.5 pt-2">
+                  <p className="px-3 font-serif text-sm font-semibold">{s.title}</p>
+                  <p className="px-3 pb-1 text-xs text-muted-foreground">
+                    Series - {books.length} {books.length === 1 ? "book" : "books"}
+                  </p>
+                  {books.map((m) => bookButton(m, true))}
+                </div>
               );
             })}
           </div>
@@ -399,6 +515,7 @@ export function Manuscripts() {
             <NewManuscriptForm
               key="new"
               workspace={workspace}
+              needsPenName={needsPenName}
               onCancel={manuscript ? () => setPane("manuscript") : null}
             />
           ) : shown === "import" ? (
@@ -408,7 +525,12 @@ export function Manuscripts() {
               <WorkspaceForm key={workspace.id} workspace={workspace} />
             </div>
           ) : manuscript ? (
-            <ManuscriptOptions key={manuscript.id} manuscript={manuscript} words={wordCounts?.[manuscript.id] ?? 0} />
+            <ManuscriptOptions
+              key={manuscript.id}
+              manuscript={manuscript}
+              words={wordCounts?.[manuscript.id] ?? 0}
+              seriesTitle={series.find((s) => s.id === manuscript.seriesId)?.title}
+            />
           ) : null}
         </section>
       </div>
