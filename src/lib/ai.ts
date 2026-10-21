@@ -180,6 +180,8 @@ export async function requestStageReview(
   chapterText: string,
   bookContext: string,
   styleGuide: string,
+  /** Replaces the pass's usual persona, e.g. the copy-editing style agent that was chosen. */
+  persona?: string,
 ): Promise<ProposedEdit[]> {
   const info = stageInfo(stage);
   const guide =
@@ -198,7 +200,7 @@ export async function requestStageReview(
         `"comment" is a short reason. Reply with [] if nothing needs changing.`;
   const prompt = `${info.task}${guide}\n\n${format}${context}\n\nCHAPTER:\n${chapterText.slice(0, 24000)}`;
 
-  const reply = await askAi(settings, info.persona, [{ role: "user", content: prompt }]);
+  const reply = await askAi(settings, persona ?? info.persona, [{ role: "user", content: prompt }]);
   const parsed = parseJson(reply, "[");
   if (!Array.isArray(parsed)) throw new Error("The AI reply was not in the expected format. Try again.");
 

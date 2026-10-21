@@ -10,9 +10,8 @@ import {
   seedRoadmap,
   setRoadmapCardDone,
 } from "@/lib/roadmap";
-import { patchManuscript } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { useApp, type Screen } from "@/state/AppState";
+import { useApp } from "@/state/AppState";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -47,12 +46,11 @@ function AddCard({ manuscriptId, column }: { manuscriptId: Id; column: Manuscrip
 }
 
 function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
-  const { navigate } = useApp();
   const [drag, setDrag] = useState<DragState | null>(null);
 
-  // Books made before the Roadmap existed get their first cards the first time it is opened.
+  // Books made before the Roadmap existed get their first cards the first time it is opened. Seeding is safe to repeat.
   useEffect(() => {
-    if (!manuscript.roadmapSeeded) void seedRoadmap(manuscript.id);
+    void seedRoadmap(manuscript.id);
   }, [manuscript.id, manuscript.roadmapSeeded]);
 
   const cards = useLiveQuery(async () => {
@@ -60,8 +58,15 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
     return rows.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt);
   }, [manuscript.id]);
 
-  const total = cards?.length ?? 0;
-  const done = cards?.filter((c) => c.done).length ?? 0;
+  // Words written so far, for the word-count goal shown in the Write column.
+  const written = useLiveQuery(async () => {
+    const rows = await db.chapters.where("manuscriptId").equals(manuscript.id).toArray();
+    return rows.reduce((sum, c) => sum + c.wordCount, 0);
+  }, [manuscript.id]);
+
+  const required = cards?.filter((c) => !c.optional) ?? [];
+  const total = required.length;
+  const done = required.filter((c) => c.done).length;
   const currentIndex = ROADMAP_COLUMNS.findIndex((c) => c.id === manuscript.status);
 
   function stepColumn(card: RoadmapCard, step: -1 | 1) {
@@ -79,7 +84,7 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Roadmap"
-        description={`${manuscript.title}: from outline to publish. ${done} of ${total} steps done.`}
+        description={`${manuscript.title}: from outline to publish. ${done} of ${total} required steps done. Outline steps are optional.`}
         actions={
           currentIndex >= 0 ? (
             <Badge variant="outline">Now: {ROADMAP_COLUMNS[currentIndex].label}</Badge>
@@ -90,8 +95,10 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
         <div className="flex h-full min-w-max gap-4">
           {ROADMAP_COLUMNS.map((column, columnIndex) => {
             const inColumn = (cards ?? []).filter((c) => c.column === column.id);
-            const finished = inColumn.filter((c) => c.done).length;
+            const finished = inColumn.filter((c) => c.done && !c.optional).length;
+            const countable = inColumn.filter((c) => !c.optional).length;
             const current = column.id === manuscript.status;
+            const goal = manuscript.targetWordCount;
             const dropHere = drag?.overColumn === column.id;
             return (
               <section
@@ -120,22 +127,32 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
                       {columnIndex + 1}. {column.label}
                     </h2>
                     <span className="text-xs text-muted-foreground">
-                      {finished}/{inColumn.length}
+                      {finished}/{countable}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">{column.blurb}</p>
+                  {column.id === "drafting" ? (
+                    <div className="space-y-1 pt-1">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="text-muted-foreground">Word-count goal</span>
+                        <span className="font-medium tabular-nums">
+                          {goal > 0
+                            ? `${(written ?? 0).toLocaleString()} of ${goal.toLocaleString()}`
+                            : "No goal set"}
+                        </span>
+                      </div>
+                      {goal > 0 ? (
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={goal} aria-valuenow={Math.min(written ?? 0, goal)}>
+                          <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, Math.round(((written ?? 0) / goal) * 100))}%` }} />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {current ? (
                     <p className="flex items-center gap-1 text-xs font-medium">
                       <Flag className="size-3" /> The book is here now
                     </p>
-                  ) : (
-                    <button
-                      className="text-xs text-muted-foreground underline"
-                      onClick={() => void patchManuscript(manuscript.id, { status: column.id })}
-                    >
-                      Mark as the current stage
-                    </button>
-                  )}
+                  ) : null}
                 </header>
 
                 <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
@@ -171,15 +188,13 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
                           onChange={(e) => void setRoadmapCardDone(card.id, e.target.checked)}
                           className="mt-0.5 size-4 accent-primary"
                         />
-                        <span className={cn("min-w-0 flex-1", card.done && "text-muted-foreground line-through")}>{card.title}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn("block", card.done && "text-muted-foreground line-through")}>{card.title}</span>
+                          {card.optional ? <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Optional</span> : null}
+                        </span>
                         {card.done ? <Check className="mt-0.5 size-4 shrink-0 text-success" /> : null}
                       </label>
                       <div className="flex items-center gap-1">
-                        {card.screen ? (
-                          <Button size="sm" variant="outline" className="h-7" onClick={() => navigate(card.screen as Screen)}>
-                            Open
-                          </Button>
-                        ) : null}
                         <span className="flex-1" />
                         <Button
                           size="icon"

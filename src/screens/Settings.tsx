@@ -2,19 +2,12 @@ import { useState, type ReactNode } from "react";
 import { Check, ImageIcon, KeyRound, ShieldCheck } from "lucide-react";
 import type { AiProvider, ApiKeyKind, StoredApiKey } from "@/db/schema";
 import { askAi } from "@/lib/ai";
-import {
-  DEFAULT_MODEL,
-  KEY_HINT,
-  normalizeServerUrl,
-  OLLAMA_DEFAULT_URL,
-  PROVIDER_LABEL,
-  providerHasServerUrl,
-  providerNeedsKey,
-} from "@/lib/providers";
-import { DEFAULT_IMAGE_MODEL, IMAGE_PROVIDER_LABEL } from "@/lib/imageAi";
+import { DEFAULT_MODEL, KEY_HINT, MODEL_SUGGESTIONS, normalizeServerUrl, OLLAMA_DEFAULT_URL, PROVIDER_LABEL, providerHasServerUrl, providerNeedsKey } from "@/lib/providers";
+import { DEFAULT_IMAGE_MODEL, IMAGE_MODEL_SUGGESTIONS, IMAGE_PROVIDER_LABEL } from "@/lib/imageAi";
 import { useOnline } from "@/lib/hooks";
 import { addApiKey, deleteApiKey, revokeApiKey, setApiKeyModel, selectApiKey, useApiKeys } from "@/lib/keyVault";
 import { BackupControls } from "@/components/BackupControls";
+import { ModelSelect } from "@/components/ModelSelect";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,7 +22,10 @@ interface KeyManagerProps {
   icon: ReactNode;
   intro: string;
   providers: Record<string, string>;
+  /** The model each provider starts with. */
   defaultModels: Record<string, string>;
+  /** The models offered in the dropdown for each provider. */
+  modelOptions: Record<string, string[]>;
   keyHints: Record<string, string>;
   modelLabel: string;
   /** Text keys can be tried against the provider before they are relied on. */
@@ -37,7 +33,7 @@ interface KeyManagerProps {
 }
 
 /** Adds, lists, switches, revokes and deletes the stored keys of one kind. Keys are encrypted on save and never shown again. */
-function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHints, modelLabel, canTest }: KeyManagerProps) {
+function KeyManager({ kind, title, icon, intro, providers, defaultModels, modelOptions, keyHints, modelLabel, canTest }: KeyManagerProps) {
   const online = useOnline();
   const list = useApiKeys(kind);
   const providerIds = Object.keys(providers);
@@ -48,9 +44,9 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Each provider's dropdown is prefilled with that provider's own models, starting with its default.
   function changeProvider(next: string) {
-    // Swap the model only if the author has not typed their own.
-    if (model === defaultModels[provider]) setModel(defaultModels[next]);
+    setModel(defaultModels[next]);
     setProvider(next);
     setMessage(null);
   }
@@ -122,7 +118,7 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
         </div>
         <div className="space-y-1">
           <Label htmlFor={`${kind}-model`}>{modelLabel}</Label>
-          <Input id={`${kind}-model`} value={model} onChange={(e) => setModel(e.target.value)} />
+          <ModelSelect id={`${kind}-model`} options={modelOptions[provider] ?? []} value={model} onChange={setModel} />
         </div>
       </div>
       {needsKey ? (
@@ -213,14 +209,12 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, keyHin
                       <Label htmlFor={`model-${row.id}`} className="shrink-0 text-xs text-muted-foreground">
                         {modelLabel}
                       </Label>
-                      <Input
-                        key={row.model}
+                      <ModelSelect
                         id={`model-${row.id}`}
-                        defaultValue={row.model}
                         className="h-8 text-xs"
-                        onBlur={(e) => {
-                          if (e.target.value.trim() && e.target.value.trim() !== row.model) void setApiKeyModel(row.id, e.target.value);
-                        }}
+                        options={modelOptions[row.provider] ?? []}
+                        value={row.model}
+                        onChange={(next) => void setApiKeyModel(row.id, next)}
                       />
                     </div>
                   )}
@@ -260,6 +254,7 @@ export function Settings() {
           intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, or Ollama on this computer. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
           providers={PROVIDER_LABEL}
           defaultModels={DEFAULT_MODEL}
+          modelOptions={MODEL_SUGGESTIONS}
           keyHints={KEY_HINT}
           modelLabel="Model"
           canTest
@@ -271,6 +266,7 @@ export function Settings() {
           intro="The Book Cover workshop makes pictures with an image-generating model, so it needs a key from a provider that offers one. This is separate from the AI staff key above, because not every text provider makes images. The key is encrypted before it is stored on this computer. Each picture is billed by the provider to your account."
           providers={IMAGE_PROVIDER_LABEL}
           defaultModels={DEFAULT_IMAGE_MODEL}
+          modelOptions={IMAGE_MODEL_SUGGESTIONS}
           keyHints={{ openai: "sk-...", google: "AIza..." }}
           modelLabel="Image model"
           canTest={false}

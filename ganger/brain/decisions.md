@@ -56,5 +56,6 @@ Archetype: Content / publishing (content-publishing). Publishing apps are read-h
 The foreman asked; these answers stand over anything a journeyman would otherwise choose.
 
 - Round 1: The AI staff (editor, formatter and so on) need an AI service to work, and that means being online. Should the app ask you for your own AI key, such as one from OpenAI or Anthropic, or should the first version leave the AI staff out and focus on outlining, writing, editing, formatting and export? **It should ask the user for an API key from their provider**
+- Round 11: If your AI key is missing or you are offline, should 'Finish developmental' stay blocked until the AI can give feedback, or should it let you finish the pass with no feedback? **Left to the foreman.**
 
 Written by Ganger from the stack decision and every override, with its reason.

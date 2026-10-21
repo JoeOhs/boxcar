@@ -1,9 +1,9 @@
 import type { AiProvider, EditStage } from "@/db/schema";
 
 /**
- * The AI providers the AI staff can run on, and every model id the app starts with.
- * This is the one place to change a default model; the author can also type any
- * other model name in Settings (and per editing pass in Edit).
+ * The AI providers the AI staff can run on, and every model id the app uses.
+ * This is the one place to change a model id. The author picks a model from a
+ * dropdown in Settings and in Edit, never by typing a name.
  */
 
 export const PROVIDER_LABEL: Record<AiProvider, string> = {
@@ -23,7 +23,7 @@ export const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 /** A different model for each editing pass out of the box. An empty entry means "use the model on the key". */
 export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, string>>> = {
-  openai: { developmental: "gpt-6.1-sol-pro", line: "gpt-6.1-sol", copy: "gpt-6-sol", proofread: "gpt-6-sol-pro" },
+  openai: { developmental: "gpt-6.1-sol-pro", line: "gpt-6.1-sol", copy: "gpt-6-luna", proofread: "gpt-6-luna-pro" },
   anthropic: {
     developmental: "claude-fable-5-1",
     line: "claude-opus-5-5",
@@ -41,9 +41,12 @@ export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, s
  */
 export const NARRATION_MODEL = "gpt-4o-mini-tts";
 
-/** Suggestions offered in the model field; any model name the provider accepts can be typed instead. */
+/**
+ * The models offered in each model dropdown, prefilled for the provider. The author
+ * chooses from this list; the app does not take free text for a model.
+ */
 export const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
-  openai: ["gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-sol", "gpt-6-sol-pro"],
+  openai: ["gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-luna", "gpt-6-luna-pro"],
   anthropic: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   huggingface: [
     "meta-llama/Llama-3.3-70B-Instruct",

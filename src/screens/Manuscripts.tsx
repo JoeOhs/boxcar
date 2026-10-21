@@ -15,11 +15,11 @@ import { BOOK_TYPE_ORDER, BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
 import { IMPORT_ACCEPT } from "@/lib/documents";
 import { genreById } from "@/lib/genres";
 import { importManuscript, planImport, type ImportPlan } from "@/lib/importManuscript";
-import { addSeriesBookTo, createManuscript, createSeries, patchManuscript, patchWorkspace } from "@/lib/store";
+import { addSeriesBookTo, createManuscript, createSeries, goalWordCount, patchManuscript, patchWorkspace } from "@/lib/store";
 import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
-import { GenrePicker } from "@/components/GenrePicker";
+import { BlendPicker, GenrePicker } from "@/components/GenrePicker";
 import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
@@ -83,24 +83,6 @@ function WorkspaceForm({ workspace }: { workspace: Workspace }) {
   );
 }
 
-function TargetInput({ id, value }: { id: Id; value: number }) {
-  const [text, setText] = useState(value ? String(value) : "");
-  return (
-    <Input
-      type="number"
-      min={0}
-      step={1000}
-      className="h-8 w-28"
-      hint="None"
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        void patchManuscript(id, { targetWordCount: Math.max(0, Math.floor(Number(e.target.value) || 0)) });
-      }}
-    />
-  );
-}
-
 type Pane = "manuscript" | "new" | "import" | "author";
 
 /**
@@ -130,6 +112,8 @@ function NewManuscriptForm({
   const [busy, setBusy] = useState(false);
   const genre = genreById(genreId);
   const info = BOOK_TYPES[type];
+  // The word-count goal follows the genre chosen here, and is locked in when the book is created.
+  const goalWords = goalWordCount(genre, type);
 
   async function create() {
     if (!title.trim() || busy) return;
@@ -175,6 +159,17 @@ function NewManuscriptForm({
           <p className="text-xs text-muted-foreground">{info.description}</p>
         </div>
         <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
+        <div className="space-y-1 sm:col-span-2 rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-sm">
+            <span className="font-medium">Word-count goal:</span>{" "}
+            {type === "series" ? `${goalWords.toLocaleString()} words per book` : `${goalWords.toLocaleString()} words`}
+            <span className="text-muted-foreground">
+              {" "}
+              {genre ? `(from the ${genre.label.toLowerCase()} guide)` : "(the default for this type)"}
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">Set when the book is created. It cannot be changed afterwards.</p>
+        </div>
       </div>
 
       {type === "series" ? (
@@ -368,23 +363,16 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
       </div>
       <div className="grid max-w-md grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label htmlFor="status">Stage</Label>
-          <Select
-            id="status"
-            className="h-8"
-            value={manuscript.status}
-            onChange={(e) => void patchManuscript(manuscript.id, { status: e.target.value as ManuscriptStatus })}
-          >
-            {Object.entries(STATUS_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
+          <Label>Stage</Label>
+          <p className="flex h-8 items-center text-sm font-medium">{STATUS_LABEL[manuscript.status]}</p>
+          <p className="text-xs text-muted-foreground">Moves on as the Roadmap steps are ticked. It cannot go back.</p>
         </div>
         <div className="space-y-1">
-          <Label>Target words</Label>
-          <TargetInput id={manuscript.id} value={manuscript.targetWordCount} />
+          <Label>Word-count goal</Label>
+          <p className="flex h-8 items-center text-sm font-medium tabular-nums">
+            {manuscript.targetWordCount > 0 ? manuscript.targetWordCount.toLocaleString() : "None set"}
+          </p>
+          <p className="text-xs text-muted-foreground">Set at creation and locked.</p>
         </div>
       </div>
       {manuscript.seriesId ? (
@@ -397,8 +385,20 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           key={manuscript.id}
           idPrefix="options"
           value={manuscript.genre}
+          locked={!!manuscript.genre}
           onChange={(genreId) => void patchManuscript(manuscript.id, { genre: genreId })}
         />
+        <div className="sm:col-span-2">
+          <BlendPicker
+            primary={genreById(manuscript.genre)}
+            value={manuscript.blendGenre}
+            idPrefix="options"
+            onChange={(genreId) => void patchManuscript(manuscript.id, { blendGenre: genreId })}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground sm:col-span-2">
+          The genre and book type are set when the book is created and stay as they are. Blending in a second genre is the one change allowed later.
+        </p>
       </div>
     </Card>
   );
@@ -436,6 +436,7 @@ export function Manuscripts() {
   function bookButton(m: Manuscript, indent: boolean) {
     const active = shown === "manuscript" && m.id === manuscript?.id;
     const genre = genreById(m.genre);
+    const blend = genreById(m.blendGenre);
     const label = indent && m.volumeNumber ? `Book ${m.volumeNumber}` : m.title;
     return (
       <button
@@ -455,6 +456,7 @@ export function Manuscripts() {
         <span className="block truncate text-xs text-muted-foreground">
           {(wordCounts?.[m.id] ?? 0).toLocaleString()} words - {STATUS_LABEL[m.status]}
           {genre ? ` - ${genre.label}` : ""}
+          {blend ? ` / ${blend.label}` : ""}
         </span>
       </button>
     );

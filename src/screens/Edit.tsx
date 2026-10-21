@@ -8,14 +8,12 @@ import {
   type AiProvider,
   type Chapter,
   type EditStage,
-  type Id,
   type Manuscript,
-  type OutlineItem,
   type Suggestion,
 } from "@/db/schema";
 import { aiReachable, AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
 import { MODEL_SUGGESTIONS } from "@/lib/providers";
-import { chapterLabel, numberChapters, sortChapters } from "@/lib/chapters";
+import { chapterLabel, numberChapters } from "@/lib/chapters";
 import {
   completeStage,
   EDIT_STAGES,
@@ -31,13 +29,16 @@ import {
 } from "@/lib/editing";
 import { buildDraftDocx } from "@/lib/docx";
 import { downloadBlob, fileSafeName } from "@/lib/download";
+import { bigPicture, DEVELOPMENTAL_AGENTS, runDevelopmentalReview } from "@/lib/developmentalReview";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
+import { styleGuideAgent, STYLE_GUIDE_AGENTS } from "@/lib/styleGuides";
 import { saveChapter, snapshotChapter } from "@/lib/store";
 import { diffParagraphs, htmlToText, replaceInHtml, textToParagraphs } from "@/lib/text";
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
+import { ModelSelect } from "@/components/ModelSelect";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -63,113 +64,98 @@ const QUICK_PROMPTS: Record<EditStage, { label: string; prompt: string }[]> = {
   proofread: [{ label: "Final check", prompt: "Do a last read for typos, repeated words and formatting slips, and list what you find." }],
 };
 
-function outlineLines(items: OutlineItem[]): string[] {
-  const lines: string[] = [];
-  const walk = (parentId: Id | null, depth: number) => {
-    items
-      .filter((item) => item.parentId === parentId)
-      .sort((a, b) => a.order - b.order)
-      .forEach((item) => {
-        lines.push(`${"  ".repeat(depth)}- ${item.kind}: ${item.title || "Untitled"}${item.summary ? ` - ${item.summary}` : ""}`);
-        walk(item.id, depth + 1);
-      });
-  };
-  walk(null, 0);
-  return lines;
-}
-
-/** The whole book in brief (outline and chapter openings), so the developmental pass sees the big picture. */
-async function bigPicture(manuscript: Manuscript): Promise<string> {
-  const [items, chapters] = await Promise.all([
-    db.outlineItems.where("manuscriptId").equals(manuscript.id).toArray(),
-    db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
-  ]);
-  const sorted = sortChapters(chapters);
-  const numbers = numberChapters(sorted);
-  const parts = [`Title: ${manuscript.title}`];
-  const genre = genreContext(genreById(manuscript.genre));
-  if (genre) parts.push(genre);
-  if (manuscript.description.trim()) parts.push(`Description: ${manuscript.description.trim()}`);
-  const outline = outlineLines(items);
-  if (outline.length > 0) parts.push(`Outline:\n${outline.join("\n")}`);
-  parts.push(
-    `Chapters:\n${sorted
-      .map(
-        (c) =>
-          `- ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${htmlToText(c.content)
-            .slice(0, 240)
-            .replace(/\s+/g, " ")}`,
-      )
-      .join("\n")}`,
-  );
-  return parts.join("\n\n");
-}
-
 // ---------------------------------------------------------------------------
 // The editing workflow: developmental, line, copy, proofreading
 // ---------------------------------------------------------------------------
 
-/** The model the author picked for one pass. Different passes can use different models. */
+/** The model the author picked for one pass, chosen from the dropdown of the author's provider's models. */
 function StageModelField({ stage }: { stage: EditStage }) {
   const ai = useAiSettings();
   const models = useEditModels();
-  const provider = ai?.provider ?? "anthropic";
   if (!models) return null;
-  return <StageModelInput key={`${provider}-${stage}`} stage={stage} provider={provider} initial={modelForStage(provider, models, stage, ai?.model)} />;
-}
-
-function StageModelInput({ stage, provider, initial }: { stage: EditStage; provider: AiProvider; initial: string }) {
-  const [value, setValue] = useState(initial);
-  const listId = `stage-models-${stage}`;
+  const provider: AiProvider = ai?.provider ?? "anthropic";
   return (
     <div className="space-y-1">
       <Label htmlFor="stage-model">Model for this pass</Label>
-      <Input
+      <ModelSelect
         id="stage-model"
-        list={listId}
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          void saveEditModel(provider, stage, e.target.value.trim());
-        }}
         className="h-8 w-56"
+        options={MODEL_SUGGESTIONS[provider]}
+        value={modelForStage(provider, models, stage, ai?.model)}
+        onChange={(model) => void saveEditModel(provider, stage, model)}
       />
-      <datalist id={listId}>
-        {MODEL_SUGGESTIONS[provider].map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
     </div>
   );
 }
 
+/** The copy-editing style agent: a dropdown of the pre-programmed style guides. */
 function StyleGuideField({ manuscript }: { manuscript: Manuscript }) {
-  const [value, setValue] = useState(workflowOf(manuscript).styleGuide);
+  const current = styleGuideAgent(workflowOf(manuscript).styleGuide).id;
   return (
     <div className="space-y-1">
       <Label htmlFor="style-guide">Style guide</Label>
-      <Input
-        id="style-guide"
-        value={value}
-        hint="e.g. Chicago Manual of Style"
-        onChange={(e) => {
-          setValue(e.target.value);
-          void setStyleGuide(manuscript, e.target.value);
-        }}
-        className="h-8 w-64"
-      />
+      <Select id="style-guide" className="h-8 w-64" value={current} onChange={(e) => void setStyleGuide(manuscript, e.target.value)}>
+        {STYLE_GUIDE_AGENTS.map((s) => (
+          <option key={s.id || "house"} value={s.id}>
+            {s.label}
+          </option>
+        ))}
+      </Select>
     </div>
   );
 }
 
 function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
   const { navigate } = useApp();
+  const ai = useAiSettings();
+  const online = useOnline();
+  const models = useEditModels();
   const workflow = workflowOf(manuscript);
   const info = stageInfo(workflow.stage);
   const done = workflow.completed.includes(workflow.stage);
   const allDone = workflow.completed.length === EDIT_STAGES.length;
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  /**
+   * Finishing the developmental pass runs the four developmental editors over the whole
+   * book. Their notes come back to the author (listed below and in each chapter's
+   * Suggestions), and only then is the pass finished.
+   */
+  async function finishDevelopmental() {
+    if (!ai) {
+      setNote({ ok: false, text: "Add your AI key in Settings first. The developmental editors give the feedback that finishes this pass." });
+      return;
+    }
+    if (!aiReachable(ai, online)) {
+      setNote({ ok: false, text: "You are offline. The developmental editors need a connection, so the pass is not finished yet." });
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"));
+      await completeStage(manuscript, "developmental");
+      const breakdown = result.perAgent.map((a) => `${a.name.toLowerCase()} ${a.notes}`).join(", ");
+      setNote({
+        ok: true,
+        text:
+          result.notes > 0
+            ? `The developmental editors gave ${result.notes} ${result.notes === 1 ? "note" : "notes"} (${breakdown}). They are listed under Developmental feedback and in each chapter's Suggestions. The pass is finished.`
+            : "The developmental editors found nothing to raise. The pass is finished.",
+      });
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : "The developmental pass could not be run. Nothing was changed." });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function finish() {
+    if (workflow.stage === "developmental") {
+      await finishDevelopmental();
+      return;
+    }
     const waiting = await db.suggestions
       .where("manuscriptId")
       .equals(manuscript.id)
@@ -223,8 +209,8 @@ function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
               <RotateCcw /> Reopen this pass
             </Button>
           ) : (
-            <Button size="sm" onClick={() => void finish()}>
-              <Check /> Finish {info.label.toLowerCase()}
+            <Button size="sm" disabled={busy} onClick={() => void finish()}>
+              <Check /> {busy ? "Reading the whole book..." : `Finish ${info.label.toLowerCase()}`}
             </Button>
           )}
           {allDone ? (
@@ -234,6 +220,58 @@ function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
           ) : null}
         </div>
       </div>
+      {note ? <p className={cn("text-sm", note.ok ? "text-success" : "text-destructive")}>{note.text}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The developmental feedback: the notes the four developmental editors gave on the
+ * whole book, grouped by editor. Each note can be opened in its chapter.
+ */
+export function DevelopmentalFeedback({ manuscript, onOpen }: { manuscript: Manuscript; onOpen: (chapterId: string) => void }) {
+  const notes = useLiveQuery(async () => {
+    const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
+    return rows.filter((s) => s.stage === "developmental" && s.agent).sort((a, b) => a.createdAt - b.createdAt);
+  }, [manuscript.id]);
+  const chapters = useChapters(manuscript.id);
+  if (!notes || notes.length === 0) return null;
+  const titleOf = (chapterId: string) => {
+    const c = chapters?.find((x) => x.id === chapterId);
+    return c ? c.title || "Untitled chapter" : "Chapter";
+  };
+  const groups = DEVELOPMENTAL_AGENTS.map((agent) => ({
+    agent,
+    items: notes.filter((n) => n.agent === agent.name),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div className="max-h-64 shrink-0 space-y-3 overflow-y-auto border-b border-border bg-background px-6 py-4">
+      <h3 className="text-sm font-medium">Developmental feedback</h3>
+      {groups.map(({ agent, items }) => (
+        <div key={agent.id} className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {agent.name} ({items.length})
+          </p>
+          {items.map((n) => (
+            <div key={n.id} className="flex items-start gap-3 rounded-md border border-border p-2 text-sm">
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {n.comment.startsWith("Whole book:") ? "Whole book" : titleOf(n.chapterId)}
+                  {" - "}
+                  <Badge variant={n.status === "accepted" ? "success" : n.status === "rejected" ? "outline" : "secondary"}>
+                    {n.status === "accepted" ? "Addressed" : n.status === "rejected" ? "Dismissed" : "Open"}
+                  </Badge>
+                </p>
+                <p>{n.comment.replace(/^Whole book:\s*/, "")}</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => onOpen(n.chapterId)}>
+                Open chapter
+              </Button>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -323,12 +361,14 @@ function SuggestionsPanel({
     setMessage(null);
     try {
       const context = notes ? await bigPicture(manuscript) : "";
+      const style = styleGuideAgent(workflowOf(manuscript).styleGuide);
       const edits = await requestStageReview(
         settingsForStage(ai, models, stage),
         stage,
         htmlToText(chapter.content),
         context,
-        workflowOf(manuscript).styleGuide,
+        style.rules,
+        stage === "copy" ? style.persona : undefined,
       );
       const now = Date.now();
       await db.suggestions.bulkAdd(
@@ -642,7 +682,7 @@ function ChapterReview({ chapter, manuscript, stage }: { chapter: Chapter; manus
               key={stage}
               manuscriptId={manuscript.id}
               role={info.role}
-              persona={info.persona}
+              persona={stage === "copy" ? styleGuideAgent(workflowOf(manuscript).styleGuide).persona : info.persona}
               model={ai && models ? modelForStage(ai.provider, models, stage, ai.model) : undefined}
               getContext={() =>
                 `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
@@ -725,6 +765,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
         </div>
       ) : null}
       <WorkflowBar manuscript={manuscript} />
+      <DevelopmentalFeedback manuscript={manuscript} onOpen={(id) => setChapterId(id)} />
       {chapters === undefined ? null : current ? (
         <ChapterReview key={current.id} chapter={current} manuscript={manuscript} stage={workflow.stage} />
       ) : (

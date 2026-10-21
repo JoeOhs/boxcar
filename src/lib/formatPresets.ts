@@ -1,4 +1,10 @@
-import type { FormatSettings } from "@/db/schema";
+import {
+  DEFAULT_FORMAT,
+  type FormatSettings,
+  type HeadingStyle,
+  type ParagraphStyle,
+  type TrimSize,
+} from "@/db/schema";
 
 /** A ready-made set of format settings for a kind of book. */
 export interface FormatPreset {
@@ -120,6 +126,35 @@ export const SCENE_BREAK_CHOICES: { value: string; label: string }[] = [
 
 export function isSceneBreakChoice(value: string): boolean {
   return SCENE_BREAK_CHOICES.some((choice) => choice.value === value);
+}
+
+const TRIM_VALUES: TrimSize[] = ["5x8", "5.25x8", "5.5x8.5", "6x9"];
+const HEADING_VALUES: HeadingStyle[] = ["plain", "numbered", "numbered-with-title"];
+const PARAGRAPH_VALUES: ParagraphStyle[] = ["indent", "block"];
+
+function inRange(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+/**
+ * The format settings a manuscript really uses. A book saved before a setting existed,
+ * or a translation copied from one, may lack some of them: those are filled in from the
+ * defaults, and any value the app no longer knows is replaced. The preview and the export
+ * both read the format through this, so they always have a complete set.
+ */
+export function resolveFormat(raw: Partial<FormatSettings> | undefined | null): FormatSettings {
+  const f: Partial<FormatSettings> = raw ?? {};
+  return {
+    fontFamily: typeof f.fontFamily === "string" && f.fontFamily.trim() ? f.fontFamily : DEFAULT_FORMAT.fontFamily,
+    fontSizePercent: inRange(f.fontSizePercent, DEFAULT_FORMAT.fontSizePercent, 50, 200),
+    lineHeight: inRange(f.lineHeight, DEFAULT_FORMAT.lineHeight, 1, 3),
+    paragraphStyle: PARAGRAPH_VALUES.includes(f.paragraphStyle as ParagraphStyle) ? (f.paragraphStyle as ParagraphStyle) : DEFAULT_FORMAT.paragraphStyle,
+    headingStyle: HEADING_VALUES.includes(f.headingStyle as HeadingStyle) ? (f.headingStyle as HeadingStyle) : DEFAULT_FORMAT.headingStyle,
+    sceneBreak: typeof f.sceneBreak === "string" && isSceneBreakChoice(f.sceneBreak) ? f.sceneBreak : DEFAULT_FORMAT.sceneBreak,
+    dropCaps: typeof f.dropCaps === "boolean" ? f.dropCaps : DEFAULT_FORMAT.dropCaps,
+    includeTableOfContents: typeof f.includeTableOfContents === "boolean" ? f.includeTableOfContents : DEFAULT_FORMAT.includeTableOfContents,
+    trimSize: TRIM_VALUES.includes(f.trimSize as TrimSize) ? (f.trimSize as TrimSize) : DEFAULT_FORMAT.trimSize,
+  };
 }
 
 function sameSettings(a: FormatSettings, b: FormatSettings): boolean {

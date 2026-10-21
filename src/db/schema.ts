@@ -48,7 +48,7 @@ export interface EditWorkflow {
   stage: EditStage;
   /** Passes the author has finished. A pass opens only when the ones before it are finished. */
   completed: EditStage[];
-  /** The style guide the copy edit checks against, e.g. "Chicago Manual of Style". */
+  /** Id of the copy-editing style agent the copy edit follows (see src/lib/styleGuides.ts). "" means house style. */
   styleGuide: string;
 }
 
@@ -125,9 +125,11 @@ export interface Manuscript {
   translationOf?: Id;
   /** For a translation: the language's name as the AI is told it, e.g. "Swahili". */
   languageName?: string;
-  /** Id of the genre chosen for the book (see src/lib/genres.ts), fiction or non-fiction. Absent when none was chosen. */
+  /** Id of the genre chosen for the book (see src/lib/genres.ts), fiction or non-fiction. Locked once chosen. */
   genre?: string;
-  /** Target word count for the whole book; 0 = none. */
+  /** A second genre blended into `genre` (genre mash-up), e.g. fantasy with horror. The only part of the inception that can change later. */
+  blendGenre?: string;
+  /** Target word count for the whole book; 0 = none. Locked once it is set. */
   targetWordCount: number;
   format: FormatSettings;
   /** Progress through developmental, line, copy and proofreading passes. Absent until the first pass is touched. */
@@ -241,6 +243,8 @@ export interface Suggestion {
   source: SuggestionSource;
   /** Which AI role produced it, when source is "ai". */
   role?: AgentRole;
+  /** The named specialist that wrote it, e.g. "Character editor", for the developmental pass. */
+  agent?: string;
   /** The editing pass it was made in. Absent on suggestions made before the workflow existed. */
   stage?: EditStage;
   /** Absent means "change". */
@@ -335,8 +339,10 @@ export interface RoadmapCard {
   /** The column the card sits in. Columns are the manuscript stages. */
   column: ManuscriptStatus;
   title: string;
-  /** The screen that does this task, if any, so the card can open it. */
+  /** The screen that does this task, if any. The card itself is ticked off on the Roadmap; the screen is only named. */
   screen?: "outline" | "write" | "edit" | "format" | "cover" | "export";
+  /** An optional card does not hold up the stage: the author may skip it. */
+  optional?: boolean;
   done: boolean;
   /** Position within the column; sort ascending. */
   order: number;

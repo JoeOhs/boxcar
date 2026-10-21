@@ -154,8 +154,29 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 17fa7b43df
 - Cost: $0.09
 
 - Integration: Both round-10 changes are in, and the integration checks pass: `tsc --noEmit` is clean and no placeholder words remain in the source or docs. I have not run the app in a browser. (4 files)
+
+## Round 11: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. In "Create or choose a workspace" (src/screens/WorkspaceGate.tsx · WorkspaceGate), the p "Saved boxcar-backup-2026-10-21.json. Keep it somewhere sa..." on /: what exactly is this saving a backup of when no workspaces have been created yet?
+2. On /, the div "Choose a genre and a structure to follow Open Build the o...": Rather than using an "open" button to transport the user to the respective screen of the card, we should utilize check boxes to report completed steps of the roadmap. The outline kanban card should be optional. the "write" phase of the kanban roadmap should have the wordcount goal.
+3. On /, the field: model selection throughout the app should be dropdown menu only with models prefilled based on their appropriate provider - not text input menu
+4. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "Finish developmental" on /: when clicking "finish developmental" it yields no feedback. no changes are given back to the user. each agent in the developmental process should be pre-programmed to execute their respective editing expertise based on the model selected.
+5. On /, the button "Book Cover": there is a bug where certain workspaces will not preview a formatted book in the format screen
+6. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the field "e.g. Chicago Manual of Style" on /: style guides of the copy editing phase should be a drop down menu of pre-programmed copy editing style AI agents - not a free text entry.
+7. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the div "TRANSLATION (SPANISH) Not translated yet." on /: A bug was found in the translation feature where the first few sentences of the text are not translated, for example:
+In April of 2025 I was working in the oilfields of West Texas and the Southeast corner of New Mexico, hauling frac sand to different well stations that are setup and torn down throughout in just a matter of months. I took that job because I wanted to challenge myself, and what better place to try and make yourself feel like a man than living in a “man-camp”, working 12 hour shifts, and weathering the perpetually changing environment of the Permian Basin?Hoje em dia, eu estava me debatendo com muitos dos temas associados à masculinidade: identidade, propósito, forma física, confiança, autocontrole, integridade e paternidade, só para citar alguns. Minha jornada por esse mundo de homens e mulheres pregando e ensinando suas visões sobre o que a masculinidade é e o que não é, em todo tipo de formato de mídia, começou na esteira da minha separação da minha agora ex-esposa, nos últimos meses de 2021.
+9. On /, the div "Respect Novel - 43,893 words of 80,000 Open Stage Outlini...": the manuscript inception should not be changeable upon workspace completion. the only exception is genre mash up. the author can choose to blend another genre into their previously chosen genre, ie. fantasy/horror. manuscript type (fiction/non-fiction) cannot be changed once chosen. Word count goals cannot be changed once chosen and stage cannot be changed once established.
+10. On /, the field "None": word count preview should change based on the genre selected
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.27
+
+- Integration: All ten round-11 changes are in. `tsc --noEmit` passes, and the coverage and docs checks are clean. I did not run the app in a browser, so the UI behaviour is checked by reading the code only. (21 files)
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

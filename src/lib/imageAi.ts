@@ -20,6 +20,12 @@ export const DEFAULT_IMAGE_MODEL: Record<ImageProvider, string> = {
   google: "gemini-2.5-flash-image",
 };
 
+/** The image models offered in the Book Cover model dropdown, prefilled for each provider. */
+export const IMAGE_MODEL_SUGGESTIONS: Record<ImageProvider, string[]> = {
+  openai: ["gpt-image-1", "dall-e-3"],
+  google: ["gemini-2.5-flash-image"],
+};
+
 /** The looks the author can pick from in the workshop. */
 export const COVER_STYLES: { id: string; label: string; prompt: string }[] = [
   { id: "illustrated", label: "Illustrated", prompt: "a detailed hand-illustrated digital artwork" },

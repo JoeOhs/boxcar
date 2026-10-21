@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { DatabaseBackup, FolderOpen } from "lucide-react";
+import { db } from "@/db/schema";
 import {
   createBackup,
   readBackup,
@@ -36,11 +38,18 @@ export function BackupControls() {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // A backup holds what the app stores. With no workspace yet there is nothing to save, so no empty file is made.
+  const workspaceCount = useLiveQuery(() => db.workspaces.count(), []);
+  const nothingYet = workspaceCount === 0;
 
   async function save() {
     setBusy(true);
     setMessage(null);
     try {
+      if ((await db.workspaces.count()) === 0) {
+        setMessage({ ok: false, text: "There is nothing to back up yet. Create a workspace first; a backup holds your workspaces and everything in them." });
+        return;
+      }
       const { blob, filename } = await createBackup();
       downloadBlob(blob, filename);
       setMessage({ ok: true, text: `Saved ${filename}. Keep it somewhere safe; open it here to bring everything back.` });
@@ -80,7 +89,7 @@ export function BackupControls() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void save()}>
+        <Button variant="outline" size="sm" disabled={busy || nothingYet} title={nothingYet ? "Create a workspace first" : undefined} onClick={() => void save()}>
           <DatabaseBackup /> Save a backup
         </Button>
         <Button asChild variant="outline" size="sm" className={cn(busy && "pointer-events-none opacity-50")}>
@@ -99,8 +108,9 @@ export function BackupControls() {
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        The backup holds your workspaces, manuscripts, outlines, chapters, research and covers. Your AI keys stay on this computer
-        and are not put in the file.
+        {nothingYet
+          ? "Nothing is saved on this computer yet, so there is nothing to back up. Create a workspace and its backup can be saved here."
+          : "The backup holds your workspaces, manuscripts, outlines, chapters, research and covers. Your AI keys stay on this computer and are not put in the file."}
       </p>
       {pending ? (
         <div className="space-y-2 rounded-md border border-border p-3 text-sm">

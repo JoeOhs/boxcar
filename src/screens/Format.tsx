@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Sparkles } from "lucide-react";
 import { DEFAULT_FORMAT, type FormatSettings, type HeadingStyle, type Manuscript, type ParagraphStyle, type TrimSize } from "@/db/schema";
 import { AgentChat } from "@/components/AgentChat";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { aiReachable, requestFormatPreset, useAiSettings } from "@/lib/ai";
 import { buildPreviewDocument, FONT_CHOICES, TRIM_SIZES } from "@/lib/epub";
-import { FORMAT_PRESETS, isSceneBreakChoice, presetById, presetMatching, SCENE_BREAK_CHOICES } from "@/lib/formatPresets";
+import { FORMAT_PRESETS, presetById, presetMatching, resolveFormat, SCENE_BREAK_CHOICES } from "@/lib/formatPresets";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { patchManuscript } from "@/lib/store";
 import { htmlToText } from "@/lib/text";
@@ -31,7 +31,8 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
   const online = useOnline();
   const chapters = useChapters(manuscript.id);
   // Settings are kept locally while the author drags a control, and written through to the manuscript.
-  const [fmt, setFmt] = useState<FormatSettings>(manuscript.format);
+  // A book saved with missing or unknown settings is shown with the defaults filled in.
+  const [fmt, setFmt] = useState<FormatSettings>(() => resolveFormat(manuscript.format));
   const [showAi, setShowAi] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [choice, setChoice] = useState<{ ok: boolean; text: string } | null>(null);
@@ -43,12 +44,6 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
     void patchManuscript(manuscript.id, { format: next });
   }
 
-  // Scene breaks are chosen from the list only. A value saved as free text by an earlier version is replaced by the default.
-  useEffect(() => {
-    if (!isSceneBreakChoice(fmt.sceneBreak)) change({ sceneBreak: DEFAULT_FORMAT.sceneBreak });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fmt.sceneBreak]);
-  const sceneBreakValue = isSceneBreakChoice(fmt.sceneBreak) ? fmt.sceneBreak : DEFAULT_FORMAT.sceneBreak;
 
   /** Asks the AI formatter to pick the preset that suits this book, and applies it. */
   async function chooseWithAi() {
@@ -186,7 +181,7 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
             </Select>
           </Field>
           <Field label="Scene break" htmlFor="f-scene">
-            <Select id="f-scene" value={sceneBreakValue} onChange={(e) => change({ sceneBreak: e.target.value })}>
+            <Select id="f-scene" value={fmt.sceneBreak} onChange={(e) => change({ sceneBreak: e.target.value })}>
               {SCENE_BREAK_CHOICES.map((choice) => (
                 <option key={choice.value || "none"} value={choice.value}>
                   {choice.label}

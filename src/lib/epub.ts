@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import type { Chapter, FormatSettings, Manuscript, TrimSize } from "@/db/schema";
 import { chapterLabel, numberChapters, sortChapters } from "./chapters";
+import { resolveFormat } from "./formatPresets";
 import { escapeHtml } from "./text";
 
 export const TRIM_SIZES: Record<TrimSize, { label: string; width: number; height: number }> = {
@@ -132,9 +133,27 @@ function copyrightBody(manuscript: Manuscript): string {
 
 const IMAGE_EXTENSION: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg" };
 
+/**
+ * A book with any detail missing (a field added after it was made, or a restored
+ * backup from an older version) is read with empty values, so it still builds and previews.
+ */
+function completeManuscript(m: Manuscript): Manuscript {
+  return {
+    ...m,
+    title: m.title || "Untitled manuscript",
+    subtitle: m.subtitle ?? "",
+    description: m.description ?? "",
+    isbn: m.isbn ?? "",
+    copyright: m.copyright ?? "",
+    language: m.language || "en",
+    keywords: m.keywords ?? [],
+  };
+}
+
 /** Builds a complete EPUB 3 file (with an NCX for older readers) ready for Amazon KDP. */
-export async function buildEpub(manuscript: Manuscript, author: string, chaptersIn: Chapter[]): Promise<Blob> {
-  const f = manuscript.format;
+export async function buildEpub(manuscriptIn: Manuscript, author: string, chaptersIn: Chapter[]): Promise<Blob> {
+  const manuscript = completeManuscript(manuscriptIn);
+  const f = resolveFormat(manuscript.format);
   const chapters = sortChapters(chaptersIn);
   const numbers = numberChapters(chapters);
   const language = manuscript.language.trim() || "en";
@@ -279,11 +298,13 @@ ${spine.join("\n")}
 
 /** A full HTML page that shows the book the way the format settings will export it. */
 export function buildPreviewDocument(
-  manuscript: Manuscript,
+  manuscriptIn: Manuscript,
   author: string,
   chaptersIn: Chapter[],
-  f: FormatSettings,
+  formatIn: Partial<FormatSettings> | undefined,
 ): string {
+  const manuscript = completeManuscript(manuscriptIn);
+  const f = resolveFormat(formatIn);
   const chapters = sortChapters(chaptersIn);
   const numbers = numberChapters(chapters);
   const trim = TRIM_SIZES[f.trimSize];

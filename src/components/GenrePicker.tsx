@@ -46,17 +46,21 @@ export function GenrePicker({
   value,
   onChange,
   idPrefix,
+  locked = false,
 }: {
   /** Id of the chosen genre, or undefined for none. */
   value: string | undefined;
   onChange: (genreId: string | undefined) => void;
   idPrefix: string;
+  /** A genre that is already chosen cannot be changed: the picker shows it and offers no change. */
+  locked?: boolean;
 }) {
   const chosen = genreById(value);
   const [category, setCategory] = useState<GenreCategory>(chosen?.category ?? "fiction");
   const matching = chosen && chosen.category === category ? chosen : undefined;
 
   function pickCategory(next: GenreCategory) {
+    if (locked) return;
     setCategory(next);
     if (chosen && chosen.category !== next) onChange(undefined);
   }
@@ -65,7 +69,12 @@ export function GenrePicker({
     <>
       <div className="space-y-1">
         <Label htmlFor={idPrefix + "-genre"}>Genre</Label>
-        <Select id={idPrefix + "-genre"} value={matching ? matching.id : ""} onChange={(e) => onChange(e.target.value || undefined)}>
+        <Select
+          id={idPrefix + "-genre"}
+          disabled={locked}
+          value={matching ? matching.id : ""}
+          onChange={(e) => onChange(e.target.value || undefined)}
+        >
           <option value="">No genre yet</option>
           {genresIn(category).map((g) => (
             <option key={g.id} value={g.id}>
@@ -85,9 +94,10 @@ export function GenrePicker({
               key={c}
               type="button"
               aria-pressed={category === c}
+              disabled={locked}
               onClick={() => pickCategory(c)}
               className={cn(
-                "flex-1 whitespace-nowrap rounded px-2 text-sm transition-colors",
+                "flex-1 whitespace-nowrap rounded px-2 text-sm transition-colors disabled:cursor-not-allowed",
                 category === c ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
               )}
             >
@@ -102,5 +112,48 @@ export function GenrePicker({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The genre mash-up: a second genre blended into the book's own, e.g. fantasy with
+ * horror. It takes genres from the same fiction or non-fiction list as the book's
+ * genre. It is the one part of a book's genre that may be changed after creation.
+ */
+export function BlendPicker({
+  primary,
+  value,
+  onChange,
+  idPrefix,
+}: {
+  primary: Genre | undefined;
+  value: string | undefined;
+  onChange: (genreId: string | undefined) => void;
+  idPrefix: string;
+}) {
+  const options = primary ? genresIn(primary.category).filter((g) => g.id !== primary.id) : [];
+  const blend = genreById(value);
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={idPrefix + "-blend"}>Blend in a second genre</Label>
+      <Select
+        id={idPrefix + "-blend"}
+        disabled={!primary}
+        value={blend && blend.id !== primary?.id ? blend.id : ""}
+        onChange={(e) => onChange(e.target.value || undefined)}
+      >
+        <option value="">{primary ? "No second genre" : "Choose a genre first"}</option>
+        {options.map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.label}
+          </option>
+        ))}
+      </Select>
+      {primary && blend ? (
+        <p className="text-xs text-muted-foreground">
+          {primary.label} with {blend.label.toLowerCase()}. You can change this second genre at any time.
+        </p>
+      ) : null}
+    </div>
   );
 }

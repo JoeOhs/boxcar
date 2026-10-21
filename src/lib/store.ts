@@ -7,6 +7,7 @@ import {
   type ChapterStatus,
   type Id,
   type Manuscript,
+  type ManuscriptStatus,
   type ManuscriptType,
   type OutlineItem,
   type OutlineKind,
@@ -78,7 +79,7 @@ export async function createManuscript(
     status: "outlining",
     type,
     genre: genre?.id,
-    targetWordCount: genre?.targetWords ?? BOOK_TYPES[type].targetWords,
+    targetWordCount: goalWordCount(genre, type),
     format: { ...DEFAULT_FORMAT },
     createdAt: now,
     updatedAt: now,
@@ -175,8 +176,31 @@ export async function addSeriesBookTo(seriesId: Id): Promise<Manuscript | undefi
   return addSeriesBook(series, next, series.title, genre, false);
 }
 
+const STAGE_RANK: Record<ManuscriptStatus, number> = { outlining: 0, drafting: 1, editing: 2, formatting: 3, ready: 4 };
+
+/**
+ * The word-count goal a new book starts with: its genre's length, else the type's default.
+ * Shown as a preview while the author picks a genre, and set once the book is created.
+ */
+export function goalWordCount(genre: Genre | undefined, type: ManuscriptType): number {
+  return genre?.targetWords ?? BOOK_TYPES[type].targetWords;
+}
+
+/**
+ * Changes a book. The inception of a book is locked once it is made: its type never
+ * changes, a word-count goal never changes once set, the genre never changes once
+ * chosen (a second genre can still be blended in), and the stage only moves forward.
+ * Changes that break those rules are dropped here, whatever screen asked for them.
+ */
 export async function patchManuscript(id: Id, changes: Partial<Omit<Manuscript, "id">>): Promise<void> {
-  await db.manuscripts.update(id, { ...changes, updatedAt: Date.now() });
+  const current = await db.manuscripts.get(id);
+  if (!current) return;
+  const next: Partial<Omit<Manuscript, "id">> = { ...changes };
+  if (current.type && next.type !== undefined && next.type !== current.type) delete next.type;
+  if (current.targetWordCount > 0 && next.targetWordCount !== undefined) delete next.targetWordCount;
+  if (current.genre && next.genre !== undefined && next.genre !== current.genre) delete next.genre;
+  if (next.status !== undefined && STAGE_RANK[next.status] < STAGE_RANK[current.status]) delete next.status;
+  await db.manuscripts.update(id, { ...next, updatedAt: Date.now() });
 }
 
 // ---------------------------------------------------------------------------

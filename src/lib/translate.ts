@@ -28,9 +28,6 @@ export interface TargetLanguage {
 /** Characters of text sent to the AI in one request. */
 const BATCH_CHARACTERS = 5000;
 
-/** The block elements whose text is translated. Nested blocks are left to their children. */
-const BLOCKS = "p,h1,h2,h3,h4,h5,h6,li,blockquote,div";
-
 /** Makes a new translation of a book: its chapters are laid out, but none is translated yet. */
 export async function createTranslation(source: Manuscript, target: TargetLanguage): Promise<Manuscript> {
   const now = Date.now();
@@ -78,10 +75,51 @@ export async function createTranslation(source: Manuscript, target: TargetLangua
   return translation;
 }
 
-/** The text blocks of a chapter's HTML, in order, from a parsed copy of it. */
+/** Inline elements sit inside a paragraph; any other element is a block. */
+const INLINE_TAGS = new Set([
+  "A", "ABBR", "B", "BDI", "BDO", "BR", "CITE", "CODE", "DEL", "DFN", "EM", "I", "IMG", "INS",
+  "KBD", "MARK", "Q", "S", "SAMP", "SMALL", "SPAN", "STRONG", "SUB", "SUP", "TIME", "U", "VAR",
+]);
+
+const isInline = (node: ChildNode) =>
+  node.nodeType === Node.TEXT_NODE || (node.nodeType === Node.ELEMENT_NODE && INLINE_TAGS.has((node as Element).tagName));
+
+/**
+ * Text that sits directly in a container beside block elements (or directly in the
+ * chapter, with no paragraph around it) is wrapped in a paragraph, so that every
+ * piece of text belongs to a block the translator can reach. Without this, loose
+ * text at the start of a chapter is left in the original language.
+ */
+function wrapLooseText(parent: Element, doc: Document): void {
+  const hasBlockChild = Array.from(parent.childNodes).some((n) => n.nodeType === Node.ELEMENT_NODE && !isInline(n));
+  if (hasBlockChild || parent === doc.body) {
+    let run: ChildNode[] = [];
+    const flush = () => {
+      if (run.some((n) => (n.textContent ?? "").trim() !== "")) {
+        const paragraph = doc.createElement("p");
+        parent.insertBefore(paragraph, run[0]);
+        for (const node of run) paragraph.appendChild(node);
+      }
+      run = [];
+    };
+    for (const node of Array.from(parent.childNodes)) {
+      if (isInline(node)) run.push(node);
+      else flush();
+    }
+    flush();
+  }
+  for (const child of Array.from(parent.children)) {
+    if (!INLINE_TAGS.has(child.tagName)) wrapLooseText(child, doc);
+  }
+}
+
+/** The text blocks of a chapter's HTML, in order, from a parsed copy of it: every block element that holds text itself. */
 function textBlocks(doc: Document): Element[] {
-  return Array.from(doc.body.querySelectorAll(BLOCKS)).filter(
-    (el) => !el.querySelector(BLOCKS) && (el.textContent ?? "").trim() !== "",
+  return Array.from(doc.body.querySelectorAll("*")).filter(
+    (el) =>
+      !INLINE_TAGS.has(el.tagName) &&
+      !Array.from(el.children).some((child) => !INLINE_TAGS.has(child.tagName)) &&
+      (el.textContent ?? "").trim() !== "",
   );
 }
 
@@ -145,6 +183,7 @@ export async function translateChapter(
   target: TargetLanguage,
 ): Promise<void> {
   const parsed = new DOMParser().parseFromString(source.content, "text/html");
+  wrapLooseText(parsed.body, parsed);
   const blocks = textBlocks(parsed);
   const sourceTitle = source.title.trim();
   const items: string[] = [];
