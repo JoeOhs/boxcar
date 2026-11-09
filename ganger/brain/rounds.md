@@ -250,8 +250,20 @@ This process occurs after developmental editing and before copy editing, focusin
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: cd450e56fe
 - Cost: $4.29
 
 - Integration: All checks pass. Everything from the round-13 feedback is implemented, wired to the data model, and reachable from the UI.
+
+## Round 14: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "Respect ze caetano IN THE WORKSPACE Book title Working ti...": After selecting "Import manuscript" it took me away from the bookshelf screen to import. I want to stay in the bookshelf screen even when opting to import a manuscript. Once the Import was finished the bookshelf became bugged and disappears, leaving only an enlarged manuscript card. Fix the bug, and enhance the look and feel of the bookshelf screen so that it is more realistic.
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.28
+
+- Integration: Completed. Summary:
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

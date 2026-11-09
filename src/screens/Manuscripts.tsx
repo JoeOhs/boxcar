@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowRight, FileUp, Plus, Trash2, UserRound } from "lucide-react";
+import { ArrowRight, FileUp, Library, Plus, Trash2, UserRound } from "lucide-react";
 import {
   db,
   deleteManuscript,
@@ -137,7 +137,7 @@ function WordGoalField({
   );
 }
 
-type Pane = "manuscript" | "new" | "import" | "author";
+type Pane = "manuscript" | "new" | "author";
 
 /**
  * The form for a new manuscript: a title, the type (short story, novella, novel
@@ -268,8 +268,16 @@ function NewManuscriptForm({
 }
 
 /** Brings a manuscript in from a file: .txt, .md, .html, .docx or .epub. Its genre and goal are chosen here. */
-function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
-  const { selectManuscript, navigate } = useApp();
+function ImportManuscriptForm({
+  workspace,
+  onCancel,
+  onImported,
+}: {
+  workspace: Workspace;
+  onCancel: (() => void) | null;
+  onImported?: (manuscriptId: Id) => void;
+}) {
+  const { selectManuscript } = useApp();
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [fileName, setFileName] = useState("");
   const [title, setTitle] = useState("");
@@ -302,7 +310,8 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
     try {
       const created = await importManuscript(workspace, plan, title.trim(), genre, goal ?? undefined);
       selectManuscript(created.id);
-      navigate("roadmap");
+      onImported?.(created.id);
+      setBusy(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The manuscript could not be imported.");
       setBusy(false);
@@ -491,13 +500,13 @@ function Spine({
   onClick: () => void;
 }) {
   const look = mockupLook(genreById(manuscript.genre));
-  // A stable hash of the id, so every book keeps its own height, thickness and lean.
   let hash = 7;
   for (const c of manuscript.id) hash = (hash * 31 + c.charCodeAt(0)) | 0;
   const seed = Math.abs(hash);
-  const height = 158 + (seed % 5) * 9; // a row of real books is never dead level
-  const width = Math.max(30, Math.min(58, 28 + Math.round(words / 2400))); // more words, a thicker spine
+  const height = 158 + (seed % 5) * 9;
+  const width = Math.max(30, Math.min(58, 28 + Math.round(words / 2400)));
   const lean = seed % 7 === 3;
+  const tilt = lean ? (seed % 2 === 0 ? -1.2 : 1.1) : 0;
   return (
     <button
       type="button"
@@ -506,61 +515,101 @@ function Spine({
       aria-label={`${manuscript.title}${brought ? " (in the workspace)" : ""}`}
       aria-pressed={selected}
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-t-[3px] transition-transform duration-200",
-        selected ? "book-pulled" : cn("hover:-translate-y-3", lean && "-rotate-2"),
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-t-[2px] border border-black/10 transition-all duration-200",
+        selected ? "z-10 -translate-y-2 scale-[1.04] shadow-[0_10px_24px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)] ring-2 ring-white/60" : "hover:-translate-y-3 hover:shadow-[0_10px_20px_rgba(0,0,0,0.45)]",
       )}
       style={{
         height,
         width,
-        background: `linear-gradient(90deg, rgba(0,0,0,0.34), rgba(255,255,255,0.14) 14%, rgba(0,0,0,0) 34%, rgba(0,0,0,0) 66%, rgba(0,0,0,0.3)), ${look.background}`,
+        transform: selected ? undefined : tilt ? `rotate(${tilt}deg)` : undefined,
+        background: `linear-gradient(90deg, rgba(0,0,0,0.42), rgba(255,255,255,0.18) 12%, rgba(255,255,255,0.06) 22%, rgba(0,0,0,0) 34%, rgba(0,0,0,0) 66%, rgba(0,0,0,0.32) 82%, rgba(0,0,0,0.45)), ${look.background}`,
         color: look.ink,
-        boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
+        boxShadow: selected ? undefined : "0 6px 14px rgba(0,0,0,0.42), inset 1px 0 0 rgba(255,255,255,0.35), inset -1px 0 0 rgba(0,0,0,0.25)",
       }}
     >
-      <span className="absolute inset-x-0 top-1.5 h-1 opacity-80" style={{ background: look.accent }} aria-hidden="true" />
-      {seed % 3 === 0 ? <span className="absolute inset-x-0 top-4 h-0.5 opacity-60" style={{ background: look.accent }} aria-hidden="true" /> : null}
+      {/* spine highlight */}
+      <span className="pointer-events-none absolute inset-y-0 left-[3px] w-[2px] bg-white/35" aria-hidden="true" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-black/25" aria-hidden="true" />
+      <span className="absolute inset-x-0 top-1.5 h-[3px] opacity-90" style={{ background: look.accent }} aria-hidden="true" />
+      <span className="absolute inset-x-[7%] top-[13px] h-px bg-white/30" aria-hidden="true" />
+      {seed % 3 === 0 ? <span className="absolute inset-x-[6%] top-5 h-px opacity-70" style={{ background: look.accent }} aria-hidden="true" /> : null}
       <span
-        className="max-h-full truncate px-1 font-semibold tracking-wide"
-        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: width > 40 ? 12 : 11 }}
+        className="relative max-h-[86%] truncate px-1 font-semibold tracking-[0.03em] drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]"
+        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontFamily: look.fontFamily, fontSize: width > 42 ? 12.5 : 11, lineHeight: 1.15 }}
       >
         {manuscript.title || "Untitled"}
       </span>
-      <span className="absolute inset-x-0 bottom-2 h-1 opacity-80" style={{ background: look.accent }} aria-hidden="true" />
+      <span className="absolute inset-x-0 bottom-2 h-[3px] opacity-90" style={{ background: look.accent }} aria-hidden="true" />
+      <span className="absolute inset-x-[7%] bottom-[11px] h-px bg-white/25" aria-hidden="true" />
       {brought ? (
-        <span className="absolute bottom-5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white ring-1 ring-black/30" title="In the workspace" />
+        <span className="absolute bottom-[7px] left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] ring-1 ring-black/30" title="In the workspace" />
       ) : null}
+      {selected ? <span className="absolute inset-0 rounded-t-[2px] ring-1 ring-white/25" aria-hidden="true" /> : null}
     </button>
   );
 }
 
-/** A wooden shelf: the books stand on the plank, with its pale top edge and dark front face beneath. */
+/** A wooden shelf: the books stand on the plank, with its pale top edge, wood grain and dark front face beneath. */
 function Shelf({ label, children }: { label?: string; children?: ReactNode }) {
   return (
-    <div aria-label={label}>
-      {label ? <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-widest text-[#e9dcc4]/85">{label}</p> : null}
-      <div className="flex min-h-44 flex-wrap items-end gap-x-[3px] gap-y-2 px-6">{children}</div>
-      <div className="h-1 bg-[#b38c60]" aria-hidden="true" />
-      <div className="h-3.5 rounded-b-sm bg-gradient-to-b from-[#96714c] to-[#6e5133] shadow-[0_12px_18px_-6px_rgba(0,0,0,0.6)]" aria-hidden="true" />
+    <div className="relative" aria-label={label}>
+      {label ? (
+        <div className="mb-2 flex items-center gap-2 px-1">
+          <span className="h-px flex-1 bg-[#e9dcc4]/20" aria-hidden="true" />
+          <p className="shrink-0 rounded bg-[#1a1208]/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f5e6c8] shadow-sm backdrop-blur-sm">{label}</p>
+          <span className="h-px flex-1 bg-[#e9dcc4]/20" aria-hidden="true" />
+        </div>
+      ) : null}
+      {/* wall shadow behind the row */}
+      <div className="absolute inset-x-0 bottom-[22px] h-10 bg-gradient-to-b from-transparent to-black/25" aria-hidden="true" />
+      <div className="relative flex min-h-44 flex-wrap items-end gap-x-[3px] gap-y-2 px-6 pb-2">
+        {children}
+        {children && (Array.isArray(children) ? children.length === 0 : false) ? (
+          <p className="py-10 text-sm italic text-[#e9dcc4]/55">No books on this shelf yet.</p>
+        ) : null}
+      </div>
+      {/* shelf plank with wood grain */}
+      <div className="relative h-[14px]">
+        <div
+          className="absolute inset-0 rounded-[2px] border border-black/20 shadow-[0_10px_18px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.35)]"
+          style={{
+            background: `linear-gradient(to bottom, #d4ac74 0%, #b78a4e 22%, #9c6d34 55%, #7a4f1f 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.07) 0 1px, transparent 1px 7px, rgba(255,255,255,0.06) 7px 8px)`,
+            backgroundBlendMode: "multiply",
+          }}
+          aria-hidden="true"
+        />
+        {/* top highlight */}
+        <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-[2px] bg-gradient-to-b from-white/55 to-transparent" aria-hidden="true" />
+        {/* front lip shadow */}
+        <div className="absolute inset-x-0 bottom-0 h-[5px] rounded-b-[2px] bg-gradient-to-b from-black/10 to-black/30" aria-hidden="true" />
+      </div>
+      {/* deep shadow under shelf */}
+      <div className="h-5 bg-gradient-to-b from-black/35 via-black/10 to-transparent" aria-hidden="true" />
     </div>
   );
 }
 
-/** The empty bookshelf: the options sit in a translucent menu at its centre. */
+/** The empty bookshelf: the options sit in a translucent menu at its centre, shelves still visible behind. */
 function EmptyBookshelf({ onNew, onImport }: { onNew: () => void; onImport: () => void }) {
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden bg-gradient-to-b from-[#7c6444] via-[#6f5840] to-[#604c36]">
-      <div className="space-y-7 px-3 py-5" aria-hidden="true">
+    <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_60%_at_50%_-10%,rgba(255,248,220,0.22),transparent_55%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4e3a24_62%,#3d2e1c_100%)]" aria-hidden="true" />
+      <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 22px, rgba(0,0,0,0.5) 22px 23px)" }} aria-hidden="true" />
+      <div className="relative space-y-7 px-3 py-5">
         <Shelf label="Books" />
         <Shelf />
         <Shelf />
       </div>
-      <div className="absolute inset-0 flex items-center justify-center p-8">
-        <div className="w-full max-w-md space-y-4 rounded-xl border border-border/50 bg-background/70 p-8 text-center shadow-2xl backdrop-blur-md">
+      <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-8">
+        <div className="w-full max-w-md space-y-4 rounded-2xl border border-white/15 bg-card/90 p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.5),0_2px_10px_rgba(0,0,0,0.3)] backdrop-blur-xl">
+          <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
+            <Library className="size-5" />
+          </div>
           <h2 className="font-serif text-xl font-semibold">Your bookshelf is empty</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             Start a book from scratch, or bring in a manuscript you already have. Every book you save appears on these shelves.
           </p>
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className="flex flex-wrap justify-center gap-2 pt-1">
             <Button onClick={onNew}>
               <Plus /> New manuscript
             </Button>
@@ -574,6 +623,32 @@ function EmptyBookshelf({ onNew, onImport }: { onNew: () => void; onImport: () =
   );
 }
 
+/** Overlay for importing: stays on the bookshelf, darkens and blurs the shelves behind. */
+function ImportDialog({
+  workspace,
+  onClose,
+  onImported,
+}: {
+  workspace: Workspace;
+  onClose: () => void;
+  onImported: (id: Id) => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[#1a1208]/55 p-4 py-8 backdrop-blur-[3px] sm:p-8" onClick={onClose} role="presentation">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-200" role="dialog" aria-modal="true" aria-label="Import a manuscript">
+        <ImportManuscriptForm
+          workspace={workspace}
+          onCancel={onClose}
+          onImported={(id) => {
+            onImported(id);
+            onClose();
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /** The pulled book: its cover presented, and the manuscript's card in a floating card on the cover's right-hand side. */
 function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
@@ -581,10 +656,13 @@ function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manu
   const genre = genreById(manuscript.genre);
 
   return (
-    <div className="shrink-0 overflow-x-auto border-b border-border bg-gradient-to-b from-background via-background to-muted/40 px-6 pb-8 pt-5">
-      <div key={manuscript.id} className="cover-present flex flex-wrap items-end">
-        <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
-        <Card className="mb-2 ml-5 min-w-0 flex-1 basis-96 space-y-5 border-border/70 bg-card/95 p-5 shadow-2xl backdrop-blur-sm">
+    <div className="shrink-0 border-b border-border/60 bg-gradient-to-b from-card via-card to-muted/30 px-6 pb-8 pt-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
+      <div key={manuscript.id} className="cover-present flex flex-wrap items-end gap-2">
+        <div className="relative">
+          <div className="absolute -bottom-3 left-4 right-4 h-6 rounded-full bg-black/20 blur-[8px]" aria-hidden="true" />
+          <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
+        </div>
+        <Card className="mb-2 ml-5 min-w-0 flex-1 basis-96 space-y-5 border-border/60 bg-card p-5 shadow-xl">
           <div className="space-y-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
             <TitleEditor key={manuscript.id} manuscript={manuscript} />
@@ -598,7 +676,7 @@ function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manu
                 </Button>
               ) : null}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs leading-relaxed text-muted-foreground">
               {isBrought
                 ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
                 : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
@@ -615,6 +693,7 @@ export function Manuscripts() {
   const { workspace, manuscripts, manuscript } = useApp();
   const [pane, setPane] = useState<Pane>("manuscript");
   const [selectedId, setSelectedId] = useState<Id | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const needsPenName = !!workspace && !workspace.name.trim();
   const hasBooks = manuscripts.length > 0;
 
@@ -649,8 +728,8 @@ export function Manuscripts() {
     setSelectedId(null);
   }
   function importBook() {
-    setPane("import");
-    setSelectedId(null);
+    // Stay on the bookshelf: open as a dialog over the shelves.
+    setImportOpen(true);
   }
   function pick(id: Id) {
     setSelectedId(id);
@@ -659,27 +738,39 @@ export function Manuscripts() {
 
   function shelfArea() {
     return (
-      <div className="min-h-0 flex-1 space-y-7 overflow-y-auto bg-gradient-to-b from-[#7c6444] via-[#6f5840] to-[#604c36] px-3 pb-8 pt-5">
-        {standalone.length > 0 ? (
-          <Shelf label="Books">
-            {standalone.map((m) => (
-              <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
-            ))}
-          </Shelf>
-        ) : null}
-        {series.map((s) => {
-          const books = manuscripts
-            .filter((m) => m.seriesId === s.id)
-            .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
-          if (books.length === 0) return null;
-          return (
-            <Shelf key={s.id} label={`${s.title} - ${books.length} ${books.length === 1 ? "book" : "books"}`}>
-              {books.map((m) => (
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-3 pb-10 pt-6">
+        {/* warm bookcase wall with vignette light */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_65%_at_50%_-8%,rgba(255,244,214,0.20),transparent_58%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4f3c26_62%,#3d2e1c_100%)]" aria-hidden="true" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 24px, rgba(0,0,0,0.7) 24px 25px)" }} aria-hidden="true" />
+        <div className="relative space-y-8">
+          {standalone.length > 0 ? (
+            <Shelf label="Books">
+              {standalone.map((m) => (
                 <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
               ))}
             </Shelf>
-          );
-        })}
+          ) : hasBooks ? null : (
+            <Shelf label="Books">
+              <p className="px-2 py-8 text-sm italic text-[#f5e6c8]/60">No standalone books yet — your imported or new books will stand here.</p>
+            </Shelf>
+          )}
+          {series.map((s) => {
+            const books = manuscripts
+              .filter((m) => m.seriesId === s.id)
+              .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
+            if (books.length === 0) return null;
+            return (
+              <Shelf key={s.id} label={`${s.title} — ${books.length} ${books.length === 1 ? "book" : "books"}`}>
+                {books.map((m) => (
+                  <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
+                ))}
+              </Shelf>
+            );
+          })}
+          {hasBooks && standalone.length === 0 && series.length === 0 ? (
+            <p className="px-6 text-sm text-[#f5e6c8]/60">Your books will appear on the shelves above.</p>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -694,7 +785,7 @@ export function Manuscripts() {
             <Button size="sm" variant={shown === "new" ? "secondary" : "outline"} disabled={!workspace} onClick={newBook}>
               <Plus /> New manuscript
             </Button>
-            <Button size="sm" variant={shown === "import" ? "secondary" : "outline"} disabled={!workspace} onClick={importBook}>
+            <Button size="sm" variant={importOpen ? "secondary" : "outline"} disabled={!workspace} onClick={importBook}>
               <FileUp /> Import manuscript
             </Button>
             <Button size="sm" variant={shown === "author" ? "secondary" : "outline"} disabled={!workspace} onClick={() => setPane("author")}>
@@ -707,10 +798,6 @@ export function Manuscripts() {
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <NewManuscriptForm key="new" workspace={workspace!} needsPenName={needsPenName} onCancel={cancel} />
         </div>
-      ) : shown === "import" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          <ImportManuscriptForm key="import" workspace={workspace!} onCancel={cancel} />
-        </div>
       ) : shown === "author" && workspace ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <div className="max-w-xl">
@@ -721,13 +808,37 @@ export function Manuscripts() {
           </div>
         </div>
       ) : !hasBooks ? (
-        <EmptyBookshelf onNew={newBook} onImport={importBook} />
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {chosen ? (
-            <BookPresentation key={chosen.id} manuscript={chosen} words={wordCounts?.[chosen.id] ?? 0} seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title} />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <EmptyBookshelf onNew={newBook} onImport={importBook} />
+          {importOpen && workspace ? (
+            <ImportDialog
+              workspace={workspace}
+              onClose={() => setImportOpen(false)}
+              onImported={(id) => {
+                setSelectedId(id);
+                setPane("manuscript");
+              }}
+            />
           ) : null}
-          {shelfArea()}
+        </div>
+      ) : (
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {chosen ? (
+              <BookPresentation key={chosen.id} manuscript={chosen} words={wordCounts?.[chosen.id] ?? 0} seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title} />
+            ) : null}
+            {shelfArea()}
+          </div>
+          {importOpen && workspace ? (
+            <ImportDialog
+              workspace={workspace}
+              onClose={() => setImportOpen(false)}
+              onImported={(id) => {
+                setSelectedId(id);
+                setPane("manuscript");
+              }}
+            />
+          ) : null}
         </div>
       )}
     </div>
