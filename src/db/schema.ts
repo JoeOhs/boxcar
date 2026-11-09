@@ -306,7 +306,7 @@ export interface AgentMessage {
   createdAt: Timestamp;
 }
 
-export type AiProvider = "openai" | "anthropic" | "huggingface" | "ollama";
+export type AiProvider = "openai" | "anthropic" | "huggingface" | "ollama" | "ollama-cloud";
 
 /** The author's own AI key as the AI calls use it: decrypted in memory only, never stored in this form. */
 export interface AiSettings {

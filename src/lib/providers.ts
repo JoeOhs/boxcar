@@ -11,6 +11,7 @@ export const PROVIDER_LABEL: Record<AiProvider, string> = {
   anthropic: "Anthropic",
   huggingface: "Hugging Face",
   ollama: "Ollama (on this computer)",
+  "ollama-cloud": "Ollama Cloud",
 };
 
 /** The model a new key starts with. */
@@ -19,6 +20,7 @@ export const DEFAULT_MODEL: Record<AiProvider, string> = {
   anthropic: "claude-sonnet-5-5",
   huggingface: "meta-llama/Llama-3.3-70B-Instruct",
   ollama: "llama3.2",
+  "ollama-cloud": "llama3.2",
 };
 
 /** A different model for each editing pass out of the box. An empty entry means "use the model on the key". */
@@ -32,6 +34,7 @@ export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, s
   },
   huggingface: {},
   ollama: {},
+  "ollama-cloud": {},
 };
 
 /**
@@ -54,6 +57,7 @@ export const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
     "Qwen/Qwen2.5-72B-Instruct",
   ],
   ollama: ["llama3.2", "llama3.1", "mistral", "qwen2.5", "gemma2"],
+  "ollama-cloud": ["gpt-oss:120b", "deepseek-v3.1:671b", "qwen3-coder:480b", "kimi-k2:1t", "llama3.2", "llama3.1", "mistral", "qwen2.5", "gemma2"],
 };
 
 /** Where the AI staff's keys come from, shown beside the key field. */
@@ -62,9 +66,12 @@ export const KEY_HINT: Record<AiProvider, string> = {
   anthropic: "sk-ant-...",
   huggingface: "hf_...",
   ollama: "",
+  "ollama-cloud": "ollama_...",
 };
 
 export const OLLAMA_DEFAULT_URL = "http://localhost:11434";
+/** Ollama Cloud API endpoint for hosted inference. Get a key at ollama.com. */
+export const OLLAMA_CLOUD_URL = "https://ollama.com";
 
 /** Ollama runs on the author's own computer and takes no key. */
 export function providerNeedsKey(provider: string): boolean {

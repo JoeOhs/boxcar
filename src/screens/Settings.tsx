@@ -251,7 +251,7 @@ export function Settings() {
           kind="text"
           title="AI staff"
           icon={<KeyRound className="size-4 text-muted-foreground" />}
-          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, or Ollama on this computer. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
+          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, Ollama on this computer, or Ollama Cloud. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
           providers={PROVIDER_LABEL}
           defaultModels={DEFAULT_MODEL}
           modelOptions={MODEL_SUGGESTIONS}

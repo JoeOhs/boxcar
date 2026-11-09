@@ -262,8 +262,21 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 1b7d8f9e68
 - Cost: $0.28
 
 - Integration: Completed. Summary:
+
+## Round 15: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "Respect ze caetano IN THE WORKSPACE Book title Working ti...": The bookshelf is bugged after selecting a book from the bookshelf, the bookshelf disappears and is replaced by an oversized manuscript card. I want the manuscript card to appear translucent over the bookshelf next to the book cover.
+2. On /, the list "OpenAI Anthropic Hugging Face Ollama (on this computer)": integrate Ollama Cloud for API inference
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.98
+
+- Integration: **Summary**
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

@@ -649,43 +649,41 @@ function ImportDialog({
   );
 }
 
-/** The pulled book: its cover presented, and the manuscript's card in a floating card on the cover's right-hand side. */
-function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
+/** Shown inside the floating panel over the bookshelf: the book's cover, title editor and options grouped together. */
+function BookPresentationInner({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
   const isBrought = brought?.id === manuscript.id;
   const genre = genreById(manuscript.genre);
 
   return (
-    <div className="shrink-0 border-b border-border/60 bg-gradient-to-b from-card via-card to-muted/30 px-6 pb-8 pt-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-      <div key={manuscript.id} className="cover-present flex flex-wrap items-end gap-2">
-        <div className="relative">
-          <div className="absolute -bottom-3 left-4 right-4 h-6 rounded-full bg-black/20 blur-[8px]" aria-hidden="true" />
-          <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
-        </div>
-        <Card className="mb-2 ml-5 min-w-0 flex-1 basis-96 space-y-5 border-border/60 bg-card p-5 shadow-xl">
-          <div className="space-y-3">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
-            <TitleEditor key={manuscript.id} manuscript={manuscript} />
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
-                <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
-              </Button>
-              {isBrought ? (
-                <Button variant="outline" onClick={() => navigate("roadmap")}>
-                  Open the Roadmap
-                </Button>
-              ) : null}
-            </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {isBrought
-                ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
-                : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
-            </p>
-          </div>
-          <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
-        </Card>
+    <>
+      <div className="relative shrink-0">
+        <div className="absolute -bottom-3 left-4 right-4 h-6 rounded-full bg-black/20 blur-[8px]" aria-hidden="true" />
+        <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
       </div>
-    </div>
+      <div className="min-w-0 flex-1 basis-80 space-y-4 sm:space-y-5">
+        <div className="space-y-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
+          <TitleEditor key={manuscript.id} manuscript={manuscript} />
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
+              <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
+            </Button>
+            {isBrought ? (
+              <Button variant="outline" onClick={() => navigate("roadmap")}>
+                Open the Roadmap
+              </Button>
+            ) : null}
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {isBrought
+              ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
+              : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
+          </p>
+        </div>
+        <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
+      </div>
+    </>
   );
 }
 
@@ -736,12 +734,21 @@ export function Manuscripts() {
     setPane("manuscript");
   }
 
-  function shelfArea() {
+  function shelfArea(selectedOverlay?: ReactNode) {
     return (
       <div className="relative min-h-0 flex-1 overflow-y-auto px-3 pb-10 pt-6">
         {/* warm bookcase wall with vignette light */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_65%_at_50%_-8%,rgba(255,244,214,0.20),transparent_58%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4f3c26_62%,#3d2e1c_100%)]" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 24px, rgba(0,0,0,0.7) 24px 25px)" }} aria-hidden="true" />
+        {/* translucent card floating over the bookshelf, right next to the cover */}
+        {selectedOverlay ? (
+          <div
+            key="bookshelf-selected"
+            className="cover-present relative z-10 mb-6 flex flex-wrap items-end gap-4 rounded-2xl border border-white/15 bg-card/75 p-5 shadow-[0_16px_48px_rgba(0,0,0,0.45),0_4px_16px_rgba(0,0,0,0.30)] backdrop-blur-md"
+          >
+            {selectedOverlay}
+          </div>
+        ) : null}
         <div className="relative space-y-8">
           {standalone.length > 0 ? (
             <Shelf label="Books">
@@ -823,12 +830,16 @@ export function Manuscripts() {
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {chosen ? (
-              <BookPresentation key={chosen.id} manuscript={chosen} words={wordCounts?.[chosen.id] ?? 0} seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title} />
-            ) : null}
-            {shelfArea()}
-          </div>
+          {shelfArea(
+            chosen ? (
+              <BookPresentationInner
+                key={chosen.id}
+                manuscript={chosen}
+                words={wordCounts?.[chosen.id] ?? 0}
+                seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title}
+              />
+            ) : undefined,
+          )}
           {importOpen && workspace ? (
             <ImportDialog
               workspace={workspace}
