@@ -105,7 +105,7 @@ function StyleGuideField({ manuscript }: { manuscript: Manuscript }) {
   );
 }
 
-function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
+function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manuscript; onDevelopmentalComplete: () => void }) {
   const { navigate } = useApp();
   const ai = useAiSettings();
   const online = useOnline();
@@ -136,6 +136,8 @@ function WorkflowBar({ manuscript }: { manuscript: Manuscript }) {
     try {
       const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"));
       await completeStage(manuscript, "developmental");
+      // The report takes over the space as soon as the pass is finished.
+      onDevelopmentalComplete();
       const breakdown = result.perAgent.map((a) => `${a.name.toLowerCase()} ${a.notes}`).join(", ");
       setNote({
         ok: true,
@@ -281,7 +283,7 @@ export function DevelopmentalFeedback({ manuscript, onOpen }: { manuscript: Manu
  * between; hovering a flag offers "Push to writing space"; asking about a flag
  * opens the editor chat with the question ready to send.
  */
-function DevelopmentalReport({
+export function DevelopmentalReport({
   manuscript,
   onOpenChapter,
   onAsk,
@@ -934,7 +936,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
           {exportNote.text}
         </div>
       ) : null}
-      <WorkflowBar manuscript={manuscript} />
+      <WorkflowBar manuscript={manuscript} onDevelopmentalComplete={() => setShowReport(true)} />
       {showReport ? (
         <DevelopmentalReport
           manuscript={manuscript}

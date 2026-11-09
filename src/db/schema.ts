@@ -290,8 +290,8 @@ export interface Suggestion {
   createdAt: Timestamp;
 }
 
-/** The AI staff: each role of the publishing house. */
-export type AgentRole = "outliner" | "editor" | "proofreader" | "formatter" | "ghostwriter" | "researcher";
+/** The AI staff: each role of the publishing house. "dev-editor" is the developmental (structural) editor. */
+export type AgentRole = "outliner" | "dev-editor" | "editor" | "proofreader" | "formatter" | "ghostwriter" | "researcher";
 
 /** One message in a conversation with an AI role about a manuscript. */
 export interface AgentMessage {

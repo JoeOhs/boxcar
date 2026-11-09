@@ -23,7 +23,7 @@ export const DEFAULT_MODEL: Record<AiProvider, string> = {
 
 /** A different model for each editing pass out of the box. An empty entry means "use the model on the key". */
 export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, string>>> = {
-  openai: { developmental: "gpt-6.1-sol-pro", line: "gpt-6.1-sol", copy: "gpt-6-luna", proofread: "gpt-6-luna-pro" },
+  openai: { developmental: "gpt-6.1-terra", line: "gpt-6.1-sol", copy: "gpt-6-luna", proofread: "gpt-6-sol" },
   anthropic: {
     developmental: "claude-fable-5-1",
     line: "claude-opus-5-5",
@@ -46,7 +46,7 @@ export const NARRATION_MODEL = "gpt-4o-mini-tts";
  * chooses from this list; the app does not take free text for a model.
  */
 export const MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
-  openai: ["gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-luna", "gpt-6-luna-pro"],
+  openai: ["gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-sol"],
   anthropic: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
   huggingface: [
     "meta-llama/Llama-3.3-70B-Instruct",

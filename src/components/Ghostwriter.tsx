@@ -4,10 +4,11 @@ import { BookOpen, Send, Sparkles, Trash2, WifiOff } from "lucide-react";
 import { db, newId, type AgentMessage, type Manuscript } from "@/db/schema";
 import { aiReachable, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
 import { genreById, genreContext } from "@/lib/genres";
-import { useOnline, useResearchNotes } from "@/lib/hooks";
+import { useChapters, useOnline, useResearchNotes } from "@/lib/hooks";
 import { outlineToText } from "@/lib/outline";
 import { researchContext } from "@/lib/research";
 import { useOutlineItems } from "@/lib/hooks";
+import { htmlToText } from "@/lib/text";
 import { universeToText, useUniverseNodes } from "@/lib/universe";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
@@ -43,6 +44,7 @@ export function Ghostwriter({
   const research = useResearchNotes(manuscript.id);
   const nodes = useUniverseNodes(manuscript.id);
   const outline = useOutlineItems(manuscript.id);
+  const chapters = useChapters(manuscript.id);
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -66,6 +68,12 @@ export function Ghostwriter({
   }, [messages?.length, busy]);
 
   function context(): string {
+    const manuscriptText = (chapters ?? [])
+      .filter((chapter) => chapter.kind !== "scrap")
+      .map((chapter) => `${chapter.title || "Untitled"}:\n${htmlToText(chapter.content)}`)
+      .filter((block) => block.split("\n").slice(1).join("").trim())
+      .join("\n\n")
+      .slice(0, 12000);
     const parts = [
       `Title: ${manuscript.title}`,
       genreContext(genreById(manuscript.genre)),
@@ -73,6 +81,7 @@ export function Ghostwriter({
       research ? researchContext(research) : "",
       nodes && nodes.length > 0 ? `THE UNIVERSE (characters, places, situations and the wider world):\n${universeToText(nodes)}` : "",
       outline && outline.length > 0 ? `THE OUTLINE:\n${outlineToText(outline)}` : "",
+      manuscriptText ? `THE WORKING MANUSCRIPT (read-only):\n${manuscriptText}` : "",
       sceneTitle
         ? `The author is writing the scene "${sceneTitle}" in the chapter "${chapterTitle}". Here it is, read-only:\n${reflectedText.slice(-8000) || "(empty so far)"}`
         : `The author is writing the chapter "${chapterTitle}". Here it is, read-only:\n${reflectedText.slice(-8000) || "(empty so far)"}`,

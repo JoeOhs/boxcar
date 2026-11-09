@@ -17,7 +17,7 @@ Stack: Content / publishing. 6 override(s), each with its reason, are in ganger/
 
 Latest rounds:
 - Round 11: asked for "Changes pinned on the running app:"; finished, and the checks passed
-- Round 12: asked for "Changes pinned on the running app:"; failed before it could finish
+- Round 12: asked for "Changes pinned on the running app:"; finished, and the checks passed
 
 Before you start, read ganger/brain/CONSTITUTION.md, mission.md, decisions.md and rounds.md. The constitution is what the app is supposed to be; its must-have ids are what Ganger checks.
 

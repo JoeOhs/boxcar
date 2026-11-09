@@ -375,7 +375,7 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
 }
 
 /** The name of the book, editable because working titles change before a book is finished. */
-function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
+export function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
   const [title, setTitle] = useState(manuscript.title);
   function save() {
     const clean = title.trim() || "Untitled manuscript";

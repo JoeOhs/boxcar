@@ -488,7 +488,7 @@ export function moveSceneToChapter(fromChapterId: Id, sceneId: Id, toChapterId: 
     if (!moving) return;
     const remaining = fromScenes.filter((scene) => scene.id !== sceneId);
     const targetScenes = parseScenes(to.content);
-    // An untouched, untitled scene is only a placeholder for an empty chapter.
+    // An untouched, untitled scene is only a stand-in for an empty chapter.
     const kept = targetScenes.filter((scene) => htmlToText(scene.html).trim() || scene.title.trim());
     const now = Date.now();
     const fromContent = serializeScenes(remaining.length > 0 ? remaining : [newScene()]);

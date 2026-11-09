@@ -144,7 +144,7 @@ export async function runDevelopmentalReview(manuscript: Manuscript, settings: A
         chapterId: target.id,
         manuscriptId: manuscript.id,
         source: "ai",
-        role: "editor",
+        role: "dev-editor",
         stage: "developmental",
         kind: "note",
         original: "",

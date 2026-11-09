@@ -163,7 +163,7 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
               {genre ? ", " + genre.label : ""}.{" "}
               {genre
                 ? "Covers in this genre usually have " + genre.coverLook + "."
-                : "Choose a genre for this book in Manuscripts to get a look that suits it."}
+                : "Choose a genre for this book in the Bookshelf to get a look that suits it."}
             </p>
             <div className="space-y-1">
               <Label htmlFor="cover-style">Style</Label>

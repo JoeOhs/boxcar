@@ -217,9 +217,10 @@ The Ghostwriter must have read-only access to the working manuscript, research f
 14. In "Book Cover workshop" (src/screens/BookCover.tsx · BookCover), the section "Current cover respect final draft eng Ze Caetano No cover..." on /: In addition to the cover of the book, there should be a preview of how the spine and back of the book will look as well.
 Add to the plan: yes
 
-- Outcome: failed before it could finish
-- Cost: $0.12
+- Outcome: finished, and the checks passed
+- Commit: e2449ea4e1
+- Cost: $0.21
 
-Still wrong: Integration: OpenCode failed: OpenCode stopped without replying to the task
+- Integration: All checks pass. Here's what I changed and why.
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.
