@@ -397,7 +397,7 @@ export function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
       <Input
         id="book-title"
         value={title}
-        className="h-11 border-0 bg-transparent px-0 font-serif text-2xl font-semibold shadow-none focus-visible:ring-0"
+        className="h-8 border-0 bg-transparent px-0 font-serif text-lg font-semibold shadow-none focus-visible:ring-0"
         onChange={(e) => setTitle(e.target.value)}
         onBlur={save}
         onKeyDown={(e) => {
@@ -413,16 +413,11 @@ export function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
   );
 }
 
-/** The options of the manuscript chosen on the shelf, inside the floating card beside its cover. */
+/** The options of the manuscript chosen on the shelf, inside the compact card below the bookshelf. */
 function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { manuscript: brought, selectManuscript } = useApp();
   const type = bookTypeOf(manuscript);
   const isBrought = brought?.id === manuscript.id;
-
-  async function remove() {
-    if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
-    await deleteManuscript(manuscript.id);
-  }
 
   async function addBook() {
     if (!manuscript.seriesId) return;
@@ -431,16 +426,16 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
   }
 
   return (
-    <div className="space-y-5 border-t border-border pt-4">
+    <div className="space-y-3 border-t border-border pt-3">
       <div className="grid max-w-md grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Stage</Label>
-          <p className="flex h-8 items-center text-sm font-medium">{STATUS_LABEL[manuscript.status]}</p>
-          <p className="text-xs text-muted-foreground">Moves on as the Roadmap steps are ticked. It cannot go back.</p>
+          <p className="flex h-7 items-center text-sm font-medium">{STATUS_LABEL[manuscript.status]}</p>
+          <p className="text-xs text-muted-foreground">Moves on as the Roadmap steps are ticked.</p>
         </div>
         <div className="space-y-1">
           <Label>Word-count goal</Label>
-          <p className="flex h-8 items-center text-sm font-medium tabular-nums">
+          <p className="flex h-7 items-center text-sm font-medium tabular-nums">
             {manuscript.targetWordCount > 0 ? manuscript.targetWordCount.toLocaleString() : "None set"}
           </p>
           <p className="text-xs text-muted-foreground">Set at creation and locked.</p>
@@ -458,7 +453,7 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           <Plus /> Add another book to this series
         </Button>
       ) : null}
-      <div className="grid gap-4 sm:grid-cols-[1fr_14rem]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
         <GenrePicker
           key={manuscript.id}
           idPrefix="options"
@@ -478,9 +473,6 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           The genre, type and word-count goal are set when the book is created and stay as they are. Blending in a second genre is the one change allowed later.
         </p>
       </div>
-      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void remove()}>
-        <Trash2 /> Delete this manuscript
-      </Button>
     </div>
   );
 }
@@ -649,41 +641,51 @@ function ImportDialog({
   );
 }
 
-/** Shown inside the floating panel over the bookshelf: the book's cover, title editor and options grouped together. */
+/** Shown in the compact card below the bookshelf: cover on top, then the title editor and options. */
 function BookPresentationInner({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
   const isBrought = brought?.id === manuscript.id;
   const genre = genreById(manuscript.genre);
 
+  async function remove() {
+    if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
+    await deleteManuscript(manuscript.id);
+  }
+
   return (
-    <>
-      <div className="relative shrink-0">
-        <div className="absolute -bottom-3 left-4 right-4 h-6 rounded-full bg-black/20 blur-[8px]" aria-hidden="true" />
-        <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
-      </div>
-      <div className="min-w-0 flex-1 basis-80 space-y-4 sm:space-y-5">
-        <div className="space-y-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
-          <TitleEditor key={manuscript.id} manuscript={manuscript} />
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
-              <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
-            </Button>
-            {isBrought ? (
-              <Button variant="outline" onClick={() => navigate("roadmap")}>
-                Open the Roadmap
-              </Button>
-            ) : null}
-          </div>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {isBrought
-              ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
-              : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
-          </p>
+    <div className="flex w-full flex-col gap-3">
+      <div className="flex justify-center">
+        <div className="relative shrink-0">
+          <div className="absolute -bottom-2 left-3 right-3 h-4 rounded-full bg-black/20 blur-[6px]" aria-hidden="true" />
+          <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="sm" />
         </div>
-        <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
       </div>
-    </>
+      <div className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
+        <TitleEditor key={manuscript.id} manuscript={manuscript} />
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
+            <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
+          </Button>
+          {isBrought ? (
+            <Button variant="outline" size="sm" onClick={() => navigate("roadmap")}>
+              Open the Roadmap
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {isBrought
+            ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
+            : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
+        </p>
+      </div>
+      <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
+      <div className="flex justify-end border-t border-border pt-3">
+        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void remove()}>
+          <Trash2 /> Delete Manuscript
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -740,15 +742,6 @@ export function Manuscripts() {
         {/* warm bookcase wall with vignette light */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_65%_at_50%_-8%,rgba(255,244,214,0.20),transparent_58%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4f3c26_62%,#3d2e1c_100%)]" aria-hidden="true" />
         <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 24px, rgba(0,0,0,0.7) 24px 25px)" }} aria-hidden="true" />
-        {/* translucent card floating over the bookshelf, right next to the cover */}
-        {selectedOverlay ? (
-          <div
-            key="bookshelf-selected"
-            className="cover-present relative z-10 mb-6 flex flex-wrap items-end gap-4 rounded-2xl border border-white/15 bg-card/75 p-5 shadow-[0_16px_48px_rgba(0,0,0,0.45),0_4px_16px_rgba(0,0,0,0.30)] backdrop-blur-md"
-          >
-            {selectedOverlay}
-          </div>
-        ) : null}
         <div className="relative space-y-8">
           {standalone.length > 0 ? (
             <Shelf label="Books">
@@ -778,6 +771,14 @@ export function Manuscripts() {
             <p className="px-6 text-sm text-[#f5e6c8]/60">Your books will appear on the shelves above.</p>
           ) : null}
         </div>
+        {selectedOverlay ? (
+          <div
+            key="bookshelf-selected"
+            className="cover-present relative z-10 mt-6 flex max-w-xl flex-col gap-3 rounded-xl border border-white/15 bg-card/85 p-4 shadow-[0_12px_32px_rgba(0,0,0,0.40),0_2px_10px_rgba(0,0,0,0.25)] backdrop-blur-md"
+          >
+            {selectedOverlay}
+          </div>
+        ) : null}
       </div>
     );
   }

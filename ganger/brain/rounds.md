@@ -275,7 +275,22 @@ What the person asked for: Changes pinned on the running app:
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: 042bbce89a
 - Cost: $0.98
+
+- Integration: **Summary**
+
+## Round 16: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "Books": move the bookshelf above the manuscript card
+2. On /, the button "Cover: respect final draft eng by ze": move the book cover to the top of the manuscript card
+3. On /, the button "Delete this manuscript": Rename the Delete the manuscript button to "Delete Manuscript", and move it to the right-hand side of the manuscript card
+4. On /, the div "respect final draft eng ze IN THE WORKSPACE Book title Wo...": reduce the size of the manuscript card
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $0.21
 
 - Integration: **Summary**
 
