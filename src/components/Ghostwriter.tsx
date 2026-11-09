@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { BookOpen, Send, Sparkles, Trash2, WifiOff } from "lucide-react";
-import { db, newId, type AgentMessage, type Manuscript } from "@/db/schema";
+import { Check, Send, Sparkles, Trash2, WifiOff, X } from "lucide-react";
+import { db, newId, type AgentMessage, type Id, type Manuscript } from "@/db/schema";
 import { aiReachable, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline, useResearchNotes } from "@/lib/hooks";
@@ -15,27 +15,62 @@ import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
+/** One mirrored scene of the author's chapter, read-only in the Ghostwriter's space. */
+export interface MirroredScene {
+  id: Id;
+  title: string;
+  html: string;
+}
+
+/** The Ghostwriter's in-progress writing: what it is typing, and where in the mirror it goes. */
+interface GhostDraft {
+  /** The scene it continues. null = the end of the chapter. */
+  sceneId: Id | null;
+  /** The whole reply. */
+  full: string;
+  /** How much of it has been typed into the space so far. */
+  shown: number;
+  /** True once it is all typed out and the check box appears. */
+  done: boolean;
+}
+
+/** The Ghostwriter's writing, highlighted inside the mirrored space, with a caret while it types. */
+function GhostBlock({ draft }: { draft: GhostDraft }) {
+  const typed = draft.full.slice(0, draft.shown);
+  return (
+    <div className="my-3 rounded-md border-2 border-dashed border-warning/70 bg-warning/15 px-3 py-2" aria-label="The Ghostwriter's writing">
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-warning">Ghostwriter · not in your manuscript yet</p>
+      <p className="whitespace-pre-wrap">
+        {typed}
+        {draft.done ? null : <span className="animate-pulse">▌</span>}
+      </p>
+    </div>
+  );
+}
+
 /**
- * The Ghostwriter's own writing space, beside the author's. It mirrors the
- * chapter being written, reads the research, Universe, characters and outline
- * (read-only), and writes its proposal in its own pane. Nothing reaches the
- * author's manuscript until the author pushes it in.
+ * The Ghostwriter's writing space, beside the author's. It mirrors the author's
+ * scenes as they are written, read-only, and writes its answer straight into
+ * that mirror, highlighted, so the author watches the change happen. When the
+ * writing is complete a check box appears at the top right of the space; ticking
+ * it pushes the highlighted text into the author's manuscript.
  */
 export function Ghostwriter({
   manuscript,
+  chapterId,
   chapterTitle,
-  reflectedText,
-  sceneTitle,
+  scenes,
+  selectedSceneId,
   onAppend,
-  onReplace,
 }: {
   manuscript: Manuscript;
+  /** The open chapter; its mirror is cleared of unreviewed writing when it changes. */
+  chapterId: Id | null;
   chapterTitle: string;
-  /** The chapter or selected scene as it is in the author's writing space right now. */
-  reflectedText: string;
-  sceneTitle?: string;
-  onAppend: (text: string) => void;
-  onReplace: (text: string) => void;
+  scenes: MirroredScene[];
+  /** The scene the author is working in; the Ghostwriter's writing continues it. */
+  selectedSceneId?: Id;
+  onAppend: (sceneId: Id | null, text: string) => void;
 }) {
   const { navigate } = useApp();
   const ai = useAiSettings();
@@ -46,10 +81,11 @@ export function Ghostwriter({
   const outline = useOutlineItems(manuscript.id);
   const chapters = useChapters(manuscript.id);
   const [prompt, setPrompt] = useState("");
-  const [output, setOutput] = useState("");
+  const [ghost, setGhost] = useState<GhostDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
 
   const messages = useLiveQuery(
     async () => {
@@ -59,9 +95,29 @@ export function Ghostwriter({
     [manuscript.id],
   );
 
+  // The mirror belongs to the chapter; switching chapters clears the unreviewed writing.
   useEffect(() => {
-    setOutput("");
-  }, [chapterTitle, sceneTitle]);
+    setGhost(null);
+  }, [chapterId]);
+
+  // The typing: the reply is revealed into the mirrored space a few words at a time.
+  useEffect(() => {
+    if (!ghost || ghost.done) return;
+    const timer = window.setInterval(() => {
+      setGhost((current) => {
+        if (!current || current.done) return current;
+        const step = Math.max(6, Math.ceil(current.full.length / 110));
+        const shown = Math.min(current.full.length, current.shown + step);
+        return { ...current, shown, done: shown >= current.full.length };
+      });
+    }, 40);
+    return () => window.clearInterval(timer);
+  }, [ghost?.done]);
+
+  // Keep the highlighted writing in view while it is typed.
+  useEffect(() => {
+    ghostRef.current?.scrollIntoView({ block: "end" });
+  }, [ghost?.shown]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -74,6 +130,10 @@ export function Ghostwriter({
       .filter((block) => block.split("\n").slice(1).join("").trim())
       .join("\n\n")
       .slice(0, 12000);
+    const mirroredText = scenes
+      .map((scene) => [scene.title ? `Scene: ${scene.title}` : "", htmlToText(scene.html)].filter(Boolean).join("\n"))
+      .filter(Boolean)
+      .join("\n\n");
     const parts = [
       `Title: ${manuscript.title}`,
       genreContext(genreById(manuscript.genre)),
@@ -82,9 +142,7 @@ export function Ghostwriter({
       nodes && nodes.length > 0 ? `THE UNIVERSE (characters, places, situations and the wider world):\n${universeToText(nodes)}` : "",
       outline && outline.length > 0 ? `THE OUTLINE:\n${outlineToText(outline)}` : "",
       manuscriptText ? `THE WORKING MANUSCRIPT (read-only):\n${manuscriptText}` : "",
-      sceneTitle
-        ? `The author is writing the scene "${sceneTitle}" in the chapter "${chapterTitle}". Here it is, read-only:\n${reflectedText.slice(-8000) || "(empty so far)"}`
-        : `The author is writing the chapter "${chapterTitle}". Here it is, read-only:\n${reflectedText.slice(-8000) || "(empty so far)"}`,
+      `The author is writing the chapter "${chapterTitle || "Untitled"}". Here it is, read-only:\n${mirroredText.slice(-8000) || "(empty so far)"}`,
     ];
     return parts.filter(Boolean).join("\n\n");
   }
@@ -120,7 +178,7 @@ export function Ghostwriter({
         text: reply,
         createdAt: Date.now(),
       });
-      setOutput(reply);
+      setGhost({ sceneId: selectedSceneId ?? null, full: reply, shown: 0, done: false });
     } catch (e) {
       setError(e instanceof Error ? e.message : "The Ghostwriter could not answer.");
     } finally {
@@ -128,11 +186,18 @@ export function Ghostwriter({
     }
   }
 
+  /** Ticking the check box pushes the Ghostwriter's finished writing into the author's chapter. */
+  function push() {
+    if (!ghost?.done) return;
+    onAppend(ghost.sceneId, ghost.full);
+    setGhost(null);
+  }
+
   async function clear() {
     if (!window.confirm("Clear your conversation with the Ghostwriter?")) return;
     const ids = await db.agentMessages.where("manuscriptId").equals(manuscript.id).filter((m) => m.role === "ghostwriter").primaryKeys();
     await db.agentMessages.bulkDelete(ids);
-    setOutput("");
+    setGhost(null);
   }
 
   const quickPrompts = [
@@ -141,6 +206,8 @@ export function Ghostwriter({
     { label: "Tighten it", prompt: "Rewrite this more tightly, keeping its events, voice and meaning." },
     { label: "Add description", prompt: "Write a paragraph of description that fits this moment, in my voice." },
   ];
+
+  const ghostPlaced = ghost && ghost.sceneId && scenes.some((scene) => scene.id === ghost.sceneId);
 
   return (
     <aside className="flex w-[30rem] shrink-0 flex-col border-l border-border" aria-label="Ghostwriter">
@@ -155,31 +222,57 @@ export function Ghostwriter({
         ) : null}
       </div>
 
-      <div className="shrink-0 border-b border-border bg-muted/30 px-3 py-2">
-        <p className="flex items-center gap-1.5 text-xs font-medium">
-          <BookOpen className="size-3.5" /> Writing beside you in
-        </p>
-        <p className="truncate text-sm font-medium">{chapterTitle || "No chapter yet"}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {sceneTitle ? `Scene: ${sceneTitle}` : "The whole chapter"} · read-only reflection
-        </p>
-        <p className="mt-1 max-h-16 overflow-hidden whitespace-pre-wrap text-[11px] text-muted-foreground">
-          {reflectedText.trim().slice(-400) || "Nothing written in this chapter yet."}
-        </p>
+      <div className="relative min-h-0 flex-1 overflow-y-auto border-b border-border bg-muted/20" aria-label="The Ghostwriter's writing space">
+        {ghost?.done ? (
+          <div className="sticky top-2 z-10 flex justify-end pr-3">
+            <div className="flex items-center gap-1 rounded-md border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur-sm">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium" title="Push the highlighted writing into your chapter">
+                <input type="checkbox" className="size-3.5 accent-primary" onChange={push} />
+                <Check className="size-3.5" /> Push into your chapter
+              </label>
+              <button className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" title="Discard this writing" aria-label="Discard this writing" onClick={() => setGhost(null)}>
+                <X className="size-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="prose-manuscript px-5 py-4 text-[15px] leading-7">
+          <p className="mb-4 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {chapterTitle.trim() || "Untitled chapter"} · mirrored from your writing space
+          </p>
+          {scenes.length === 0 && !ghost ? (
+            <p className="text-center text-sm text-muted-foreground">Your scenes appear here as you write them.</p>
+          ) : null}
+          {scenes.map((scene) => (
+            <section key={scene.id} className="mb-4">
+              {scene.title.trim() ? <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{scene.title}</p> : null}
+              {htmlToText(scene.html).trim() ? (
+                <div dangerouslySetInnerHTML={{ __html: scene.html }} />
+              ) : (
+                <p className="text-sm italic text-muted-foreground">An empty scene.</p>
+              )}
+              {ghostPlaced && ghost.sceneId === scene.id ? (
+                <div ref={ghostRef}>
+                  <GhostBlock draft={ghost} />
+                </div>
+              ) : null}
+            </section>
+          ))}
+          {ghost && !ghostPlaced ? (
+            <div ref={ghostRef}>
+              <GhostBlock draft={ghost} />
+            </div>
+          ) : null}
+          {busy && !ghost ? <p className="text-sm text-muted-foreground">The Ghostwriter is writing...</p> : null}
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2">
-        {messages?.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Ask the Ghostwriter to draft, continue or reshape the scene. Its writing appears here and does not touch your
-            manuscript until you push it in.
-          </p>
-        ) : null}
+      <div className="max-h-44 shrink-0 space-y-2 overflow-y-auto px-3 py-2" aria-label="Conversation with the Ghostwriter">
         {messages?.map((message) => (
           <div key={message.id} className={message.from === "user" ? "flex justify-end" : "flex justify-start"}>
             <div
               className={cn(
-                "max-w-[95%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm",
+                "max-w-[95%] whitespace-pre-wrap rounded-lg px-3 py-1.5 text-xs",
                 message.from === "user" ? "bg-primary text-primary-foreground" : "bg-muted",
               )}
             >
@@ -187,7 +280,6 @@ export function Ghostwriter({
             </div>
           </div>
         ))}
-        {busy ? <p className="text-sm text-muted-foreground">The Ghostwriter is writing...</p> : null}
         <div ref={endRef} />
       </div>
 
@@ -230,7 +322,7 @@ export function Ghostwriter({
                 void ask(prompt);
               }
             }}
-            hint="Ask the Ghostwriter to write"
+            hint="Prompt the Ghostwriter"
             className="min-h-10 resize-none"
             rows={2}
             disabled={!ai}
@@ -238,25 +330,6 @@ export function Ghostwriter({
           <Button size="icon" title="Send" disabled={!ai || busy || !reachable || !prompt.trim()} onClick={() => void ask(prompt)}>
             <Send />
           </Button>
-        </div>
-        <div className="space-y-1 rounded-md border border-border p-2">
-          <p className="text-xs font-medium">The Ghostwriter's writing space</p>
-          <Textarea
-            value={output}
-            onChange={(e) => setOutput(e.target.value)}
-            rows={5}
-            hint="The Ghostwriter's draft appears here"
-            aria-label="The Ghostwriter's draft"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" disabled={!output.trim()} onClick={() => onAppend(output)}>
-              Push into the scene
-            </Button>
-            <Button size="sm" variant="outline" disabled={!output.trim()} onClick={() => onReplace(output)}>
-              Replace the scene
-            </Button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">Only a push changes your manuscript.</p>
         </div>
       </div>
     </aside>

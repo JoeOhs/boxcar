@@ -181,6 +181,25 @@
   animation: cover-present 480ms cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
+/* A book pulled off the bookshelf: it leans out, then stands a little above the shelf. */
+@keyframes book-pull {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-10px) translateX(5px) rotate(3deg);
+  }
+  100% {
+    transform: translateY(-26px) translateX(0) rotate(0deg);
+  }
+}
+.book-pulled {
+  animation: book-pull 340ms ease-out;
+  transform: translateY(-26px);
+  z-index: 10;
+  box-shadow: 0 20px 30px -8px rgba(0, 0, 0, 0.55);
+}
+
 .editor-surface:focus {
   outline: none;
 }

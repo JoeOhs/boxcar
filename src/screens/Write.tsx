@@ -14,7 +14,7 @@ import {
   saveChapter,
 } from "@/lib/store";
 import { htmlSpeech } from "@/lib/narration";
-import { escapeHtml, htmlToText, textToParagraphs } from "@/lib/text";
+import { escapeHtml, textToParagraphs } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { EditableHtml, EditorToolbar } from "@/components/RichEditor";
@@ -133,14 +133,6 @@ function useChapterDraft(chapter: Chapter) {
         .join("");
       if (!paragraphs) return;
       commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, html: s.html + paragraphs } : s)));
-      setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }));
-    },
-    /** Replaces a scene's whole text with the Ghostwriter's draft, once the author pushes it. */
-    replaceScene: (id: Id, text: string) => {
-      const html = textToParagraphs(text)
-        .map((p) => `<p>${escapeHtml(p)}</p>`)
-        .join("");
-      commit(latest.current.scenes.map((s) => (s.id === id ? { ...s, html } : s)));
       setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }));
     },
     renameScene: (id: Id, value: string) =>
@@ -505,10 +497,8 @@ function ChapterDesk({
   const selectedScene = draft.scenes.find((scene) => scene.id === draft.selectedId) ?? draft.scenes[0];
   // The chapter as it is on the page now (including unsaved typing), read aloud by the listening bar.
   const spoken = [draft.title.trim(), ...htmlSpeech(draft.scenes.map((s) => s.html).join(""))].filter(Boolean);
-  const reflectedText = draft.scenes
-    .map((scene) => [scene.title ? scene.title : "", htmlToText(scene.html)].filter(Boolean).join("\n"))
-    .filter(Boolean)
-    .join("\n\n");
+  // The author's scenes, mirrored live into the Ghostwriter's writing space.
+  const mirroredScenes = draft.scenes.map((scene) => ({ id: scene.id, title: scene.title, html: scene.html }));
 
   // Bringing another book to the workspace saves the open chapter through this.
   useEffect(() => {
@@ -576,11 +566,14 @@ function ChapterDesk({
       {ghostwriterOpen ? (
         <Ghostwriter
           manuscript={manuscript}
+          chapterId={chapter.id}
           chapterTitle={draft.title}
-          reflectedText={reflectedText}
-          sceneTitle={selectedScene?.title || undefined}
-          onAppend={(text) => draft.appendToScene(selectedScene.id, text)}
-          onReplace={(text) => draft.replaceScene(selectedScene.id, text)}
+          scenes={mirroredScenes}
+          selectedSceneId={selectedScene?.id}
+          onAppend={(sceneId, text) => {
+            const target = sceneId && draft.scenes.some((scene) => scene.id === sceneId) ? sceneId : selectedScene.id;
+            draft.appendToScene(target, text);
+          }}
         />
       ) : null}
     </>
@@ -714,10 +707,10 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
             {ghostwriterOpen ? (
               <Ghostwriter
                 manuscript={manuscript}
+                chapterId={null}
                 chapterTitle=""
-                reflectedText=""
+                scenes={[]}
                 onAppend={() => undefined}
-                onReplace={() => undefined}
               />
             ) : null}
           </>

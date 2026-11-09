@@ -222,6 +222,8 @@ export interface UniverseNode {
   fields: UniverseField[];
   /** Ids of the other Universe nodes this one connects to. */
   links: Id[];
+  /** An artistic rendering of the node (a character portrait, a location's landscape), uploaded or made by the image AI. */
+  image?: Blob;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -290,8 +292,8 @@ export interface Suggestion {
   createdAt: Timestamp;
 }
 
-/** The AI staff: each role of the publishing house. "dev-editor" is the developmental (structural) editor. */
-export type AgentRole = "outliner" | "dev-editor" | "editor" | "proofreader" | "formatter" | "ghostwriter" | "researcher";
+/** The AI staff: each role of the publishing house. "dev-editor" is the developmental (structural) editor, "line-editor" the line editor, "copy-editor" the copy editor. */
+export type AgentRole = "outliner" | "dev-editor" | "line-editor" | "copy-editor" | "proofreader" | "formatter" | "ghostwriter" | "researcher";
 
 /** One message in a conversation with an AI role about a manuscript. */
 export interface AgentMessage {

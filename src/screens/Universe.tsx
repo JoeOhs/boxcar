@@ -1,14 +1,16 @@
-import { useState } from "react";
-import { Link2, Plus, Sparkles, Tag, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Image as ImageIcon, Link2, Plus, Sparkles, Tag, Trash2, Upload } from "lucide-react";
 import type { Manuscript, UniverseField, UniverseNode, UniverseNodeKind } from "@/db/schema";
 import { aiReachable, useAiSettings } from "@/lib/ai";
 import { genreById, genreContext } from "@/lib/genres";
 import { useOnline, useOutlineItems } from "@/lib/hooks";
+import { generateCoverImage, useImageAiSettings } from "@/lib/imageAi";
 import { outlineToText } from "@/lib/outline";
 import {
   createUniverseNode,
   deleteUniverseNode,
   newField,
+  nodeArtworkPrompt,
   nodeColor,
   patchUniverseNode,
   tagStyle,
@@ -121,14 +123,138 @@ function FieldsEditor({ node }: { node: UniverseNode }) {
   );
 }
 
-function NodeEditor({ node, nodes }: { node: UniverseNode; nodes: UniverseNode[] }) {
+/** A stored artwork blob as a URL the browser can show. The URL is released when the picture changes or leaves. */
+function useArtworkUrl(blob: Blob | undefined): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) {
+      setUrl(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [blob]);
+  return url;
+}
+
+/**
+ * The node's artistic rendering: a space kept beside a character or location,
+ * filled either by uploading a picture or by painting one with the author's
+ * image AI (a portrait for a character, a landscape for a location).
+ */
+function NodeArtwork({ node, manuscript }: { node: UniverseNode; manuscript: Manuscript }) {
+  const { navigate } = useApp();
+  const imageAi = useImageAiSettings();
+  const online = useOnline();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const url = useArtworkUrl(node.image);
+  const isCharacter = node.kind === "character";
+
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    await patchUniverseNode(node.id, { image: file });
+  }
+
+  async function paint() {
+    if (!imageAi || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const image = await generateCoverImage(imageAi, nodeArtworkPrompt(node, manuscript.title));
+      await patchUniverseNode(node.id, { image });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The picture could not be made.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeImage() {
+    if (!window.confirm("Remove this picture from the node?")) return;
+    await patchUniverseNode(node.id, { image: undefined });
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-1.5">
+        <ImageIcon className="size-3.5" /> {isCharacter ? "Character art" : "Location art"}
+      </Label>
+      <div
+        className={cn(
+          "relative flex items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/40",
+          isCharacter ? "aspect-[3/4]" : "aspect-[16/10]",
+        )}
+      >
+        {url ? (
+          <img src={url} alt={`${isCharacter ? "Portrait" : "Landscape"} of ${node.name.trim() || "this node"}`} className="size-full object-cover" />
+        ) : (
+          <div className="flex flex-col items-center gap-2 p-3 text-center">
+            <ImageIcon className="size-6 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
+              {isCharacter ? "Space for an artistic rendering of this character." : "Space for an artistic landscape of this location."}
+            </p>
+          </div>
+        )}
+        {busy ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/70 text-xs text-muted-foreground">Painting...</div>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button asChild size="sm" variant="outline" className={cn(busy && "pointer-events-none opacity-50")}>
+          <label className="cursor-pointer">
+            <Upload /> {node.image ? "Replace" : "Upload"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              onChange={(e) => {
+                void upload(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!imageAi || busy || !online}
+          title={imageAi ? `Paint ${isCharacter ? "a portrait" : "a landscape"} with your image AI` : "Add an image AI key in Settings first"}
+          onClick={() => void paint()}
+        >
+          <Sparkles /> {busy ? "Painting..." : node.image ? "Paint again" : "Paint with AI"}
+        </Button>
+        {node.image ? (
+          <Button size="icon" variant="ghost" title="Remove the picture" onClick={() => void removeImage()}>
+            <Trash2 />
+          </Button>
+        ) : null}
+      </div>
+      {imageAi === null ? (
+        <p className="text-xs text-muted-foreground">
+          Painting uses your image AI key.{" "}
+          <button className="underline" onClick={() => navigate("settings")}>
+            Add it in Settings
+          </button>
+          .
+        </p>
+      ) : null}
+      {imageAi && !online ? <p className="text-xs text-muted-foreground">Offline: painting needs a connection. Uploading works offline.</p> : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+function NodeEditor({ node, nodes, manuscript }: { node: UniverseNode; nodes: UniverseNode[]; manuscript: Manuscript }) {
   const others = nodes.filter((other) => other.id !== node.id);
   function toggleLink(id: string) {
     const links = node.links.includes(id) ? node.links.filter((link) => link !== id) : [...node.links, id];
     void patchUniverseNode(node.id, { links });
   }
-  return (
-    <div className="max-w-3xl space-y-5">
+  const hasArtwork = node.kind === "character" || node.kind === "location";
+  const identity = (
+    <>
       <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
         <div className="space-y-1">
           <Label htmlFor="u-name">Name</Label>
@@ -162,12 +288,24 @@ function NodeEditor({ node, nodes }: { node: UniverseNode; nodes: UniverseNode[]
         <Label htmlFor="u-summary">What this is</Label>
         <Textarea
           id="u-summary"
-          rows={4}
+          rows={hasArtwork ? 6 : 4}
           value={node.summary}
           hint="What it is, why it matters to the book, and anything the reader should understand."
           onChange={(e) => void patchUniverseNode(node.id, { summary: e.target.value })}
         />
       </div>
+    </>
+  );
+  return (
+    <div className="max-w-3xl space-y-5">
+      {hasArtwork ? (
+        <div className={cn("grid items-start gap-4", node.kind === "character" ? "sm:grid-cols-[1fr_15rem]" : "sm:grid-cols-[1fr_19rem]")}>
+          <div className="space-y-3">{identity}</div>
+          <NodeArtwork key={node.id} node={node} manuscript={manuscript} />
+        </div>
+      ) : (
+        identity
+      )}
       <TagsField key={node.id + ":" + node.tags.join(",")} node={node} />
       <FieldsEditor node={node} />
       <div className="space-y-2">
@@ -329,7 +467,7 @@ function UniverseBody({ manuscript }: { manuscript: Manuscript }) {
                   <Trash2 /> Delete node
                 </Button>
               </div>
-              <NodeEditor key={selected.id} node={selected} nodes={nodes ?? []} />
+              <NodeEditor key={selected.id} node={selected} nodes={nodes ?? []} manuscript={manuscript} />
             </div>
           ) : (
             <div className="max-w-md space-y-2 text-sm text-muted-foreground">

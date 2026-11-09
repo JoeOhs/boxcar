@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, FileDown, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import { Check, FileDown, FileText, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import {
   db,
   newId,
@@ -30,6 +30,7 @@ import {
 import { buildDraftDocx } from "@/lib/docx";
 import { downloadBlob, fileSafeName } from "@/lib/download";
 import { bigPicture, DEVELOPMENTAL_AGENTS, runDevelopmentalReview } from "@/lib/developmentalReview";
+import { exportStageReport, REPORT_TITLE } from "@/lib/reports";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { styleGuideAgent, STYLE_GUIDE_AGENTS } from "@/lib/styleGuides";
@@ -49,7 +50,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-type Tab = "suggestions" | "revisions" | "ai";
+type Tab = "reports" | "revisions" | "ai";
 
 const QUICK_PROMPTS: Record<EditStage, { label: string; prompt: string }[]> = {
   developmental: [
@@ -210,9 +211,18 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
             <Button size="sm" variant="outline" onClick={() => void reopenStage(manuscript, workflow.stage)}>
               <RotateCcw /> Reopen this pass
             </Button>
+          ) : workflow.stage === "developmental" ? (
+            <Button
+              size="sm"
+              disabled={busy}
+              title="The developmental editors read the whole book and write their report"
+              onClick={() => void finish()}
+            >
+              <Check /> {busy ? "Reading the whole book..." : "Begin Editing"}
+            </Button>
           ) : (
             <Button size="sm" disabled={busy} onClick={() => void finish()}>
-              <Check /> {busy ? "Reading the whole book..." : `Finish ${info.label.toLowerCase()}`}
+              <Check /> {busy ? "Working..." : `Finish ${info.label.toLowerCase()}`}
             </Button>
           )}
           {allDone ? (
@@ -594,7 +604,7 @@ function SuggestionsPanel({
         {pending.map((s) => (
           <Card key={s.id} className="space-y-2 p-3 text-sm">
             <Badge variant={s.source === "ai" ? "default" : "secondary"}>
-              {s.source === "ai" && s.role ? AGENT_LABEL[s.role] : "You"}
+              {s.source === "ai" && s.role ? (AGENT_LABEL[s.role] ?? "Editor") : "You"}
             </Badge>
             {s.kind === "note" ? (
               <>
@@ -750,12 +760,144 @@ function RevisionsPanel({ chapter }: { chapter: Chapter }) {
   );
 }
 
+/** A finished pass's items on this chapter, read-only, behind the Reports menu's "Open". */
+function ReportArchiveList({ chapter, stage }: { chapter: Chapter; stage: EditStage }) {
+  const items = useLiveQuery(async () => {
+    const rows = await db.suggestions.where("chapterId").equals(chapter.id).toArray();
+    return rows.filter((s) => s.source === "ai" && s.stage === stage).sort((a, b) => a.createdAt - b.createdAt);
+  }, [chapter.id, stage]);
+  if (!items) return null;
+  if (items.length === 0) {
+    return <p className="text-xs text-muted-foreground">Nothing from this pass on this chapter yet.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {items.map((s) => (
+        <Card key={s.id} className="space-y-2 p-3 text-sm">
+          <div className="flex items-center gap-2">
+            <Badge variant={s.status === "accepted" ? "success" : s.status === "rejected" ? "outline" : "secondary"}>
+              {s.kind === "note"
+                ? s.status === "accepted"
+                  ? "Addressed"
+                  : s.status === "rejected"
+                    ? "Dismissed"
+                    : "Open"
+                : s.status === "accepted"
+                  ? "Accepted"
+                  : s.status === "rejected"
+                    ? "Rejected"
+                    : "Open"}
+            </Badge>
+            {s.agent ? <span className="text-xs text-muted-foreground">{s.agent}</span> : null}
+          </div>
+          {s.kind === "note" ? (
+            <>
+              {s.original ? <p className="rounded bg-muted px-2 py-1 italic">{s.original}</p> : null}
+              <p>{s.comment.replace(/^Whole book:\s*/, "")}</p>
+            </>
+          ) : (
+            <>
+              <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{s.original}</p>
+              <p className="rounded bg-success/10 px-2 py-1">{s.replacement || <em className="text-muted-foreground">(remove)</em>}</p>
+              {s.comment ? <p className="text-xs text-muted-foreground">{s.comment}</p> : null}
+            </>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The Reports menu: one row per editing pass, with what its editor agents have
+ * written for the whole book. Opening a report reads it here; exporting saves it
+ * to the local drive as a Markdown file.
+ */
+function ReportsMenu({
+  manuscript,
+  viewStage,
+  onView,
+  onOpenDevReport,
+}: {
+  manuscript: Manuscript;
+  viewStage: EditStage;
+  onView: (stage: EditStage) => void;
+  onOpenDevReport: () => void;
+}) {
+  const { workspace } = useApp();
+  const [exporting, setExporting] = useState<EditStage | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const counts = useLiveQuery(async () => {
+    const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
+    const workflow = workflowOf(manuscript);
+    const out = {} as Record<EditStage, number>;
+    for (const item of EDIT_STAGES) {
+      out[item.id] = rows.filter((s) => s.source === "ai" && (s.stage === item.id || (s.stage === undefined && item.id === workflow.stage))).length;
+    }
+    return out;
+  }, [manuscript.id, manuscript.editWorkflow]);
+
+  async function exportReport(reportStage: EditStage) {
+    setExporting(reportStage);
+    setNote(null);
+    try {
+      const filename = await exportStageReport(manuscript, workspace?.name ?? "", reportStage);
+      setNote({ ok: true, text: `Saved ${filename} to your downloads.` });
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : "The report could not be exported." });
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  return (
+    <Card className="space-y-1 p-2">
+      <h3 className="px-1 pb-1 text-sm font-medium">Reports</h3>
+      <p className="px-1 pb-1 text-xs text-muted-foreground">What the editor agents have written. Open a report to read it, or export it to your drive.</p>
+      {EDIT_STAGES.map((item) => {
+        const count = counts?.[item.id] ?? 0;
+        const active = viewStage === item.id;
+        return (
+          <div key={item.id} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors", active ? "bg-accent" : "hover:bg-accent/50")}>
+            <button className="min-w-0 flex-1 text-left" onClick={() => onView(item.id)} aria-pressed={active}>
+              <span className="block truncate font-medium">{REPORT_TITLE[item.id]}</span>
+              <span className="block text-xs text-muted-foreground">
+                {item.id === "developmental" ? "The developmental editors" : AGENT_LABEL[item.role]}
+                {" · "}
+                {count === 0 ? "nothing yet" : `${count} ${count === 1 ? "item" : "items"}`}
+              </span>
+            </button>
+            {item.id === "developmental" ? (
+              <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" disabled={count === 0} title="Open the full developmental report" onClick={onOpenDevReport}>
+                Full report
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 shrink-0 px-2"
+              disabled={count === 0 || exporting !== null}
+              title="Export this report to your local drive"
+              onClick={() => void exportReport(item.id)}
+            >
+              <FileDown /> {exporting === item.id ? "Saving..." : "Export"}
+            </Button>
+          </div>
+        );
+      })}
+      {note ? <p className={cn("px-1 pt-1 text-xs", note.ok ? "text-success" : "text-destructive")}>{note.text}</p> : null}
+    </Card>
+  );
+}
+
 function ChapterReview({
   chapter,
   manuscript,
   stage,
   initialTab,
   initialQuestion,
+  onOpenReport,
 }: {
   chapter: Chapter;
   manuscript: Manuscript;
@@ -764,13 +906,19 @@ function ChapterReview({
   initialTab?: Tab;
   /** A question from the developmental report, put in the chat box ready to send. */
   initialQuestion?: string;
+  /** Opens the full developmental report view. */
+  onOpenReport: () => void;
 }) {
   const ai = useAiSettings();
   const models = useEditModels();
-  const [tab, setTab] = useState<Tab>(initialTab ?? "suggestions");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "reports");
+  const [viewStage, setViewStage] = useState<EditStage>(stage);
   const [selectedText, setSelectedText] = useState("");
   const viewRef = useRef<HTMLDivElement>(null);
   const info = stageInfo(stage);
+
+  // Follow the workflow when it moves to another pass.
+  useEffect(() => setViewStage(stage), [stage]);
 
   function captureSelection() {
     const selection = window.getSelection();
@@ -779,7 +927,7 @@ function ChapterReview({
   }
 
   const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
-    { id: "suggestions", label: "Suggestions", icon: <Check /> },
+    { id: "reports", label: "Reports", icon: <FileText /> },
     { id: "revisions", label: "Revisions", icon: <History /> },
     { id: "ai", label: "Ask the AI", icon: <MessageSquare /> },
   ];
@@ -828,10 +976,23 @@ function ChapterReview({
           </div>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {tab === "suggestions" ? (
-              <SuggestionsPanel chapter={chapter} manuscript={manuscript} stage={stage} selectedText={selectedText} />
-            ) : (
+            {tab === "revisions" ? (
               <RevisionsPanel chapter={chapter} />
+            ) : (
+              <div className="space-y-5">
+                <ReportsMenu manuscript={manuscript} viewStage={viewStage} onView={setViewStage} onOpenDevReport={onOpenReport} />
+                {viewStage === stage ? (
+                  <SuggestionsPanel chapter={chapter} manuscript={manuscript} stage={stage} selectedText={selectedText} />
+                ) : (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">{REPORT_TITLE[viewStage]}: this chapter</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Read-only: the workflow is on the {info.label.toLowerCase()} pass. The export above covers the whole book.
+                    </p>
+                    <ReportArchiveList chapter={chapter} stage={viewStage} />
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -956,6 +1117,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
           stage={workflow.stage}
           initialTab={activeQuestion ? "ai" : undefined}
           initialQuestion={activeQuestion}
+          onOpenReport={() => setShowReport(true)}
         />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">

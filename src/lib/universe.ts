@@ -110,9 +110,36 @@ export async function createUniverseNode(manuscriptId: Id, kind: UniverseNodeKin
 
 export async function patchUniverseNode(
   id: Id,
-  changes: Partial<Pick<UniverseNode, "name" | "summary" | "kind" | "tags" | "fields" | "links">>,
+  changes: Partial<Pick<UniverseNode, "name" | "summary" | "kind" | "tags" | "fields" | "links" | "image">>,
 ): Promise<void> {
   await db.universeNodes.update(id, { ...changes, updatedAt: Date.now() });
+}
+
+/**
+ * The prompt for the node's artistic rendering: a portrait for a character, a
+ * landscape for a location. Painted by the author's image AI in the Universe.
+ */
+export function nodeArtworkPrompt(node: UniverseNode, bookTitle: string): string {
+  const name = node.name.trim() || "Unnamed";
+  const appearance = node.fields.find((field) => /appearance/i.test(field.label) && field.value.trim())?.value.trim();
+  const detail = node.summary.trim();
+  if (node.kind === "character") {
+    return [
+      `An artistic character portrait of "${name}", a character in the book "${bookTitle}".`,
+      appearance ? `Appearance: ${appearance}.` : "",
+      detail ? `Who they are: ${detail}.` : "",
+      "Painterly digital artwork, head and shoulders, full of character. No text, letters or words anywhere in the picture.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return [
+    `An artistic landscape rendering of "${name}", a location in the book "${bookTitle}".`,
+    detail ? `What it is like: ${detail}.` : "",
+    "A wide establishing view, like a film's first shot of the place. No text, letters or words anywhere in the picture.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** Deletes a node and takes it out of every node that linked to it. */

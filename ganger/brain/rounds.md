@@ -218,9 +218,40 @@ The Ghostwriter must have read-only access to the working manuscript, research f
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
-- Commit: e2449ea4e1
+- Commit: 8a4be3956a
 - Cost: $0.21
 
 - Integration: All checks pass. Here's what I changed and why.
+
+## Round 13: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the div "BOOKS Respect": Make the bookshelf the main screen and make it a realistic looking bookshelf. Books appear on the bookshelf if they are save and if no books are saved or imported the options should presented to the user in a translucent menu at the center of the bookshelf. Selecting a book activates an animation of the book being pulled off the shelf and presenting the manuscript card info in a floating card on the right-hand side of the books cover.
+2. On /, the div "Character Delete node Name Kind Character Location Situat...": leave some space in the character creation screen for an artistic rendering of the character that the user could either upload or generate via AI image model.
+3. On /, the div "Location Delete node Name Kind Character Location Situati...": leave space in the location creation screen where the user could render an artistic landscape of the location they are creating
+4. In "Writing desk" (src/screens/Write.tsx · Write), the div "Writing beside you in No chapter yet The whole chapter · ..." on /: The Ghostwriters writing space and the chapter body should be one writing space, not separated. Remove the Ghostwriters draft box and box prompting the user to "Ask the Ghostwriter to draft...", then mirror the users Scenes into the Ghostwriters writing space, so that the once the user prompts the Ghostwriter in the text box - they are able to see the changes happen in the Ghostwriters writing space in real time. The text that the Ghostwriter is typing should be highlighted for identifying changes and once the writing is complete, a check box will appear in the top right-hand corner of the writing space.
+5. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the div "1 Developmental / Line editing / Copy editing / Proofread..." on /: in the file ai.ts replace "editor:
+    "You are the Editor at a small publishing house. You work on the text at the level of the sentence: flow, voice, style, rhythm and clarity. You respect the author's voice and explain every change you propose.",
+  To: "line-editor: You are the Line Editor at a small publishing house. Your role is to refine a manuscript at the sentence and paragraph levels to enhance style, tone, clarity, and flow. Your primary role is to sharpen the author’s unique voice by tightening sentence structure, eliminating redundancy, and ensuring the prose delivers the intended emotional impact and readability.
+
+Key responsibilities include:
+
+-Refining Language: Replacing vague or weak words with precise, vivid alternatives to strengthen the narrative.
+    
+-Improving Flow: Adjusting sentence rhythm and varying structure to maintain reader engagement and logical progression.
+    
+-Preserving Voice: Ensuring consistency in tone and character voice without imposing the editor’s own style on the work.
+    
+-Balancing Detail: Removing "fluff" or unnecessary clutter while retaining essential details that serve the story or argument.
+    
+This process occurs after developmental editing and before copy editing, focusing on how the story is told rather than correcting grammar or restructuring the plot.
+6. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "Finish developmental" on /: Change "Finish developmental" to "Begin Editing", this activates the dev-editor to begin its work and generate a developmental edit report.
+7. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "Suggestions" on /: Change the "Suggestions" button to "Reports" this button will open the Reports menu where the user can select and export any editor agent generated reports to their local drive.
+Add to the plan: yes
+
+- Outcome: finished, and the checks passed
+- Cost: $4.29
+
+- Integration: All checks pass. Everything from the round-13 feedback is implemented, wired to the data model, and reachable from the UI.
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

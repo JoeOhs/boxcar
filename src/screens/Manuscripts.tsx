@@ -404,7 +404,7 @@ export function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
   );
 }
 
-/** The options of the manuscript chosen on the shelf. */
+/** The options of the manuscript chosen on the shelf, inside the floating card beside its cover. */
 function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { manuscript: brought, selectManuscript } = useApp();
   const type = bookTypeOf(manuscript);
@@ -422,7 +422,7 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
   }
 
   return (
-    <Card className="max-w-2xl space-y-5 p-5">
+    <div className="space-y-5 border-t border-border pt-4">
       <div className="grid max-w-md grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Stage</Label>
@@ -472,23 +472,32 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
       <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void remove()}>
         <Trash2 /> Delete this manuscript
       </Button>
-    </Card>
+    </div>
   );
 }
 
-/** One book's spine on the shelf. Clicking it presents the book's cover and card. */
+/** One book standing on the shelf as its spine. Clicking it pulls the book off the shelf. */
 function Spine({
   manuscript,
+  words,
   selected,
   brought,
   onClick,
 }: {
   manuscript: Manuscript;
+  words: number;
   selected: boolean;
   brought: boolean;
   onClick: () => void;
 }) {
   const look = mockupLook(genreById(manuscript.genre));
+  // A stable hash of the id, so every book keeps its own height, thickness and lean.
+  let hash = 7;
+  for (const c of manuscript.id) hash = (hash * 31 + c.charCodeAt(0)) | 0;
+  const seed = Math.abs(hash);
+  const height = 158 + (seed % 5) * 9; // a row of real books is never dead level
+  const width = Math.max(30, Math.min(58, 28 + Math.round(words / 2400))); // more words, a thicker spine
+  const lean = seed % 7 === 3;
   return (
     <button
       type="button"
@@ -497,97 +506,113 @@ function Spine({
       aria-label={`${manuscript.title}${brought ? " (in the workspace)" : ""}`}
       aria-pressed={selected}
       className={cn(
-        "relative flex h-44 w-10 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-black/10 shadow-md transition-transform duration-150 hover:-translate-y-2",
-        selected && "-translate-y-2 ring-2 ring-ring",
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-t-[3px] transition-transform duration-200",
+        selected ? "book-pulled" : cn("hover:-translate-y-3", lean && "-rotate-2"),
       )}
-      style={{ background: look.background, color: look.ink }}
+      style={{
+        height,
+        width,
+        background: `linear-gradient(90deg, rgba(0,0,0,0.34), rgba(255,255,255,0.14) 14%, rgba(0,0,0,0) 34%, rgba(0,0,0,0) 66%, rgba(0,0,0,0.3)), ${look.background}`,
+        color: look.ink,
+        boxShadow: "0 4px 10px rgba(0,0,0,0.4)",
+      }}
     >
+      <span className="absolute inset-x-0 top-1.5 h-1 opacity-80" style={{ background: look.accent }} aria-hidden="true" />
+      {seed % 3 === 0 ? <span className="absolute inset-x-0 top-4 h-0.5 opacity-60" style={{ background: look.accent }} aria-hidden="true" /> : null}
       <span
-        className="max-h-full truncate px-1 text-xs font-semibold tracking-wide"
-        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        className="max-h-full truncate px-1 font-semibold tracking-wide"
+        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: width > 40 ? 12 : 11 }}
       >
         {manuscript.title || "Untitled"}
       </span>
-      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: look.accent }} aria-hidden="true" />
-      {brought ? <span className="absolute bottom-1.5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white ring-1 ring-black/20" title="In the workspace" /> : null}
+      <span className="absolute inset-x-0 bottom-2 h-1 opacity-80" style={{ background: look.accent }} aria-hidden="true" />
+      {brought ? (
+        <span className="absolute bottom-5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white ring-1 ring-black/30" title="In the workspace" />
+      ) : null}
     </button>
   );
 }
 
-function Shelf({ label, children }: { label?: string; children: ReactNode }) {
+/** A wooden shelf: the books stand on the plank, with its pale top edge and dark front face beneath. */
+function Shelf({ label, children }: { label?: string; children?: ReactNode }) {
   return (
-    <div className="space-y-1">
-      {label ? <p className="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p> : null}
-      <div className="flex min-h-44 flex-wrap items-end gap-1.5 rounded-t-md border-x border-t border-border bg-muted/40 px-2 pt-2">{children}</div>
-      <div className="h-2.5 rounded-b-sm border border-border bg-gradient-to-b from-muted to-accent shadow-sm" aria-hidden="true" />
+    <div aria-label={label}>
+      {label ? <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-widest text-[#e9dcc4]/85">{label}</p> : null}
+      <div className="flex min-h-44 flex-wrap items-end gap-x-[3px] gap-y-2 px-6">{children}</div>
+      <div className="h-1 bg-[#b38c60]" aria-hidden="true" />
+      <div className="h-3.5 rounded-b-sm bg-gradient-to-b from-[#96714c] to-[#6e5133] shadow-[0_12px_18px_-6px_rgba(0,0,0,0.6)]" aria-hidden="true" />
     </div>
   );
 }
 
+/** The empty bookshelf: the options sit in a translucent menu at its centre. */
 function EmptyBookshelf({ onNew, onImport }: { onNew: () => void; onImport: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-      <h2 className="font-serif text-xl font-semibold">Your bookshelf is empty</h2>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        Start a book from scratch, or bring in a manuscript you already have. Nothing else is needed yet.
-      </p>
-      <div className="flex flex-wrap justify-center gap-2">
-        <Button onClick={onNew}>
-          <Plus /> New manuscript
-        </Button>
-        <Button variant="outline" onClick={onImport}>
-          <FileUp /> Import manuscript
-        </Button>
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-gradient-to-b from-[#7c6444] via-[#6f5840] to-[#604c36]">
+      <div className="space-y-7 px-3 py-5" aria-hidden="true">
+        <Shelf label="Books" />
+        <Shelf />
+        <Shelf />
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center p-8">
+        <div className="w-full max-w-md space-y-4 rounded-xl border border-border/50 bg-background/70 p-8 text-center shadow-2xl backdrop-blur-md">
+          <h2 className="font-serif text-xl font-semibold">Your bookshelf is empty</h2>
+          <p className="text-sm text-muted-foreground">
+            Start a book from scratch, or bring in a manuscript you already have. Every book you save appears on these shelves.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button onClick={onNew}>
+              <Plus /> New manuscript
+            </Button>
+            <Button variant="outline" onClick={onImport}>
+              <FileUp /> Import manuscript
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/** The cover presentation: the chosen book's cover, its name and its card. */
+/** The pulled book: its cover presented, and the manuscript's card in a floating card on the cover's right-hand side. */
 function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
   const isBrought = brought?.id === manuscript.id;
   const genre = genreById(manuscript.genre);
 
   return (
-    <div className="space-y-6">
-      <div key={manuscript.id} className="cover-present flex flex-wrap items-start gap-6">
-        <CoverMockup
-          title={manuscript.title}
-          author={workspace?.name ?? ""}
-          genre={genre}
-          image={manuscript.cover}
-          size="lg"
-        />
-        <div className="min-w-0 flex-1 space-y-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isBrought ? "In the workspace" : "On the shelf"}
-          </p>
-          <TitleEditor key={manuscript.id} manuscript={manuscript} />
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
-              <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
-            </Button>
-            {isBrought ? (
-              <Button variant="outline" onClick={() => navigate("roadmap")}>
-                Open the Roadmap
+    <div className="shrink-0 overflow-x-auto border-b border-border bg-gradient-to-b from-background via-background to-muted/40 px-6 pb-8 pt-5">
+      <div key={manuscript.id} className="cover-present flex flex-wrap items-end">
+        <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="lg" />
+        <Card className="mb-2 ml-5 min-w-0 flex-1 basis-96 space-y-5 border-border/70 bg-card/95 p-5 shadow-2xl backdrop-blur-sm">
+          <div className="space-y-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
+            <TitleEditor key={manuscript.id} manuscript={manuscript} />
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
+                <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
               </Button>
-            ) : null}
+              {isBrought ? (
+                <Button variant="outline" onClick={() => navigate("roadmap")}>
+                  Open the Roadmap
+                </Button>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {isBrought
+                ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
+                : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
+            </p>
           </div>
-          <p className="max-w-md text-xs text-muted-foreground">
-            {isBrought
-              ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
-              : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
-          </p>
-        </div>
+          <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
+        </Card>
       </div>
-      <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
     </div>
   );
 }
 
 export function Manuscripts() {
-  const { workspace, manuscripts, manuscript, selectManuscript } = useApp();
+  const { workspace, manuscripts, manuscript } = useApp();
   const [pane, setPane] = useState<Pane>("manuscript");
   const [selectedId, setSelectedId] = useState<Id | null>(null);
   const needsPenName = !!workspace && !workspace.name.trim();
@@ -614,9 +639,10 @@ export function Manuscripts() {
   const series = [...(seriesRows ?? [])].sort((a, b) => a.title.localeCompare(b.title));
   const standalone = manuscripts.filter((m) => !m.seriesId);
 
-  const chosen = manuscripts.find((m) => m.id === selectedId) ?? manuscript ?? manuscripts[0];
+  // The book chosen on the shelf, or the one in the workspace. Nothing is chosen for you.
+  const chosen = manuscripts.find((m) => m.id === selectedId) ?? manuscript ?? null;
   const shown: Pane = pane === "manuscript" && needsPenName && !hasBooks ? "new" : pane;
-  const cancel = hasBooks && chosen ? () => setPane("manuscript") : null;
+  const cancel = hasBooks ? () => setPane("manuscript") : null;
 
   function newBook() {
     setPane("new");
@@ -626,23 +652,18 @@ export function Manuscripts() {
     setPane("import");
     setSelectedId(null);
   }
+  function pick(id: Id) {
+    setSelectedId(id);
+    setPane("manuscript");
+  }
 
-  function bookShelf() {
+  function shelfArea() {
     return (
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 space-y-7 overflow-y-auto bg-gradient-to-b from-[#7c6444] via-[#6f5840] to-[#604c36] px-3 pb-8 pt-5">
         {standalone.length > 0 ? (
           <Shelf label="Books">
             {standalone.map((m) => (
-              <Spine
-                key={m.id}
-                manuscript={m}
-                selected={chosen?.id === m.id}
-                brought={manuscript?.id === m.id}
-                onClick={() => {
-                  setSelectedId(m.id);
-                  setPane("manuscript");
-                }}
-              />
+              <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
             ))}
           </Shelf>
         ) : null}
@@ -654,16 +675,7 @@ export function Manuscripts() {
           return (
             <Shelf key={s.id} label={`${s.title} - ${books.length} ${books.length === 1 ? "book" : "books"}`}>
               {books.map((m) => (
-                <Spine
-                  key={m.id}
-                  manuscript={m}
-                  selected={chosen?.id === m.id}
-                  brought={manuscript?.id === m.id}
-                  onClick={() => {
-                    setSelectedId(m.id);
-                    setPane("manuscript");
-                  }}
-                />
+                <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
               ))}
             </Shelf>
           );
@@ -677,10 +689,21 @@ export function Manuscripts() {
       <ScreenHeader
         title="Bookshelf"
         description={workspace ? `Every book by ${workspace.name || "this workspace"}.` : "Every book in this workspace."}
+        actions={
+          <>
+            <Button size="sm" variant={shown === "new" ? "secondary" : "outline"} disabled={!workspace} onClick={newBook}>
+              <Plus /> New manuscript
+            </Button>
+            <Button size="sm" variant={shown === "import" ? "secondary" : "outline"} disabled={!workspace} onClick={importBook}>
+              <FileUp /> Import manuscript
+            </Button>
+            <Button size="sm" variant={shown === "author" ? "secondary" : "outline"} disabled={!workspace} onClick={() => setPane("author")}>
+              <UserRound /> About this author
+            </Button>
+          </>
+        }
       />
-      {!hasBooks && shown === "manuscript" ? (
-        <EmptyBookshelf onNew={newBook} onImport={importBook} />
-      ) : shown === "new" ? (
+      {shown === "new" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <NewManuscriptForm key="new" workspace={workspace!} needsPenName={needsPenName} onCancel={cancel} />
         </div>
@@ -688,50 +711,23 @@ export function Manuscripts() {
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           <ImportManuscriptForm key="import" workspace={workspace!} onCancel={cancel} />
         </div>
+      ) : shown === "author" && workspace ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <div className="max-w-xl">
+            <WorkspaceForm key={workspace.id} workspace={workspace} />
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setPane("manuscript")}>
+              Back to the bookshelf
+            </Button>
+          </div>
+        </div>
+      ) : !hasBooks ? (
+        <EmptyBookshelf onNew={newBook} onImport={importBook} />
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <aside className="flex w-72 shrink-0 flex-col border-r border-border">
-            <div className="space-y-2 border-b border-border p-3">
-              <Button size="sm" className="w-full" disabled={!workspace} onClick={newBook}>
-                <Plus /> New manuscript
-              </Button>
-              <Button size="sm" variant="outline" className="w-full" disabled={!workspace} onClick={importBook}>
-                <FileUp /> Import manuscript
-              </Button>
-            </div>
-            {bookShelf()}
-            <div className="border-t border-border p-2">
-              <button
-                onClick={() => setPane("author")}
-                aria-current={shown === "author" ? "true" : undefined}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4",
-                  shown === "author" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                )}
-              >
-                <UserRound /> About this author
-              </button>
-            </div>
-          </aside>
-
-          <section className="min-w-0 flex-1 overflow-y-auto p-6">
-            {!workspace ? (
-              <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
-            ) : shown === "author" ? (
-              <div className="max-w-xl">
-                <WorkspaceForm key={workspace.id} workspace={workspace} />
-              </div>
-            ) : chosen ? (
-              <BookPresentation
-                key={chosen.id}
-                manuscript={chosen}
-                words={wordCounts?.[chosen.id] ?? 0}
-                seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">Choose a book from the shelf.</p>
-            )}
-          </section>
+        <div className="flex min-h-0 flex-1 flex-col">
+          {chosen ? (
+            <BookPresentation key={chosen.id} manuscript={chosen} words={wordCounts?.[chosen.id] ?? 0} seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title} />
+          ) : null}
+          {shelfArea()}
         </div>
       )}
     </div>
