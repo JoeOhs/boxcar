@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { FileUp, Plus, Trash2, UserRound } from "lucide-react";
+import { ArrowRight, FileUp, Plus, Trash2, UserRound } from "lucide-react";
 import {
   db,
   deleteManuscript,
@@ -12,14 +12,16 @@ import {
   type Workspace,
 } from "@/db/schema";
 import { BOOK_TYPE_ORDER, BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
+import { mockupLook } from "@/lib/coverMockup";
 import { IMPORT_ACCEPT } from "@/lib/documents";
-import { genreById } from "@/lib/genres";
+import { genreById, type Genre } from "@/lib/genres";
 import { importManuscript, planImport, type ImportPlan } from "@/lib/importManuscript";
 import { addSeriesBookTo, createManuscript, createSeries, goalWordCount, patchManuscript, patchWorkspace } from "@/lib/store";
 import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { BlendPicker, GenrePicker } from "@/components/GenrePicker";
+import { CoverMockup } from "@/components/CoverMockup";
 import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
@@ -83,15 +85,67 @@ function WorkspaceForm({ workspace }: { workspace: Workspace }) {
   );
 }
 
+/**
+ * The word-count goal for a book being created. It follows the genre's typical
+ * length until the author types a goal of their own; either way it is fixed once
+ * the book is made.
+ */
+function WordGoalField({
+  idPrefix,
+  type,
+  genre,
+  goal,
+  setGoal,
+}: {
+  idPrefix: string;
+  type: ManuscriptType;
+  genre: Genre | undefined;
+  /** null means "follow the genre and type". */
+  goal: number | null;
+  setGoal: (goal: number | null) => void;
+}) {
+  const suggested = goalWordCount(genre, type);
+  const value = goal ?? suggested;
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3 sm:col-span-2">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <Label htmlFor={idPrefix + "-goal"}>{type === "series" ? "Word-count goal per book" : "Word-count goal"}</Label>
+          <Input
+            id={idPrefix + "-goal"}
+            type="number"
+            min={0}
+            step={1000}
+            className="w-40"
+            value={value}
+            onChange={(e) => setGoal(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+          />
+        </div>
+        <p className="pb-1.5 text-xs text-muted-foreground">
+          {goal === null
+            ? `Following the ${genre ? `${genre.label.toLowerCase()} guide` : `${BOOK_TYPES[type].label.toLowerCase()} default`}: ${suggested.toLocaleString()} words.`
+            : `Your own goal. The suggestion was ${suggested.toLocaleString()} words.`}
+        </p>
+        {goal !== null ? (
+          <Button size="sm" variant="ghost" onClick={() => setGoal(null)}>
+            Use the suggested length
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-xs text-muted-foreground">Set when the book is created. It cannot be changed afterwards.</p>
+    </div>
+  );
+}
+
 type Pane = "manuscript" | "new" | "import" | "author";
 
 /**
  * The form for a new manuscript: a title, the type (short story, novella, novel
- * or series), the genre guide, and the pen name. The pen name generator is part of
- * this form, so the pen name suggestions depend on the genre chosen here.
+ * or series), the genre guide, the word-count goal and the pen name. The pen name
+ * generator is part of this form, so the suggestions depend on the genre chosen here.
  *
  * Layout: Title beside Type; under Title the Genre dropdown, under Type the
- * Fiction / Non-fiction buttons; the genre guide and the pen name below.
+ * Fiction / Non-fiction buttons; the guide, the goal and the pen name below.
  */
 function NewManuscriptForm({
   workspace,
@@ -108,22 +162,22 @@ function NewManuscriptForm({
   const [type, setType] = useState<ManuscriptType>("novel");
   const [bookCount, setBookCount] = useState(3);
   const [genreId, setGenreId] = useState<string | undefined>(undefined);
+  const [goal, setGoal] = useState<number | null>(null);
   const [startOutline, setStartOutline] = useState(true);
   const [busy, setBusy] = useState(false);
   const genre = genreById(genreId);
   const info = BOOK_TYPES[type];
-  // The word-count goal follows the genre chosen here, and is locked in when the book is created.
-  const goalWords = goalWordCount(genre, type);
 
   async function create() {
     if (!title.trim() || busy) return;
     setBusy(true);
     try {
+      const targetWords = goal ?? undefined;
       if (type === "series") {
-        const { books } = await createSeries(workspace, title, bookCount, genre, startOutline && !!genre);
+        const { books } = await createSeries(workspace, title, bookCount, genre, startOutline && !!genre, targetWords);
         selectManuscript(books[0].id);
       } else {
-        const created = await createManuscript(workspace, title, genre, startOutline && !!genre, type);
+        const created = await createManuscript(workspace, title, genre, startOutline && !!genre, type, targetWords);
         selectManuscript(created.id);
       }
       navigate("roadmap");
@@ -159,17 +213,7 @@ function NewManuscriptForm({
           <p className="text-xs text-muted-foreground">{info.description}</p>
         </div>
         <GenrePicker idPrefix="new" value={genreId} onChange={setGenreId} />
-        <div className="space-y-1 sm:col-span-2 rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-sm">
-            <span className="font-medium">Word-count goal:</span>{" "}
-            {type === "series" ? `${goalWords.toLocaleString()} words per book` : `${goalWords.toLocaleString()} words`}
-            <span className="text-muted-foreground">
-              {" "}
-              {genre ? `(from the ${genre.label.toLowerCase()} guide)` : "(the default for this type)"}
-            </span>
-          </p>
-          <p className="text-xs text-muted-foreground">Set when the book is created. It cannot be changed afterwards.</p>
-        </div>
+        <WordGoalField idPrefix="new" type={type} genre={genre} goal={goal} setGoal={setGoal} />
       </div>
 
       {type === "series" ? (
@@ -183,7 +227,7 @@ function NewManuscriptForm({
             ))}
           </Select>
           <p className="text-xs text-muted-foreground">
-            Each book is made as Book 1, Book 2 and so on. Choose the book to outline from the Outline screen.
+            Each book is made as Book 1, Book 2 and so on. Choose the book to outline from the Universe screen.
           </p>
         </div>
       ) : null}
@@ -194,7 +238,7 @@ function NewManuscriptForm({
           <span>
             Start the outline with the {genre.label.toLowerCase()} structure
             <span className="block text-xs text-muted-foreground">
-              Also sets a target of {genre.targetWords.toLocaleString()} words and the genre's keywords. You can change both later.
+              Also sets the genre's keywords. The goal above stays as you set it.
             </span>
           </span>
         </label>
@@ -223,14 +267,17 @@ function NewManuscriptForm({
   );
 }
 
-/** Brings a manuscript in from a file: .txt, .md, .html, .docx or .epub. It is cut into chapters, which the author can check first. */
+/** Brings a manuscript in from a file: .txt, .md, .html, .docx or .epub. Its genre and goal are chosen here. */
 function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; onCancel: (() => void) | null }) {
   const { selectManuscript, navigate } = useApp();
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [fileName, setFileName] = useState("");
   const [title, setTitle] = useState("");
+  const [genreId, setGenreId] = useState<string | undefined>(undefined);
+  const [goal, setGoal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const genre = genreById(genreId);
 
   async function choose(file: File | undefined) {
     if (!file) return;
@@ -253,7 +300,7 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
     if (!plan || !title.trim() || busy) return;
     setBusy(true);
     try {
-      const created = await importManuscript(workspace, plan, title.trim());
+      const created = await importManuscript(workspace, plan, title.trim(), genre, goal ?? undefined);
       selectManuscript(created.id);
       navigate("roadmap");
     } catch (e) {
@@ -288,9 +335,13 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {plan ? (
         <div className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="import-title">Title</Label>
-            <Input id="import-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <div className="grid gap-4 sm:grid-cols-[1fr_14rem]">
+            <div className="space-y-1">
+              <Label htmlFor="import-title">Title</Label>
+              <Input id="import-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <GenrePicker idPrefix="import" value={genreId} onChange={setGenreId} />
+            <WordGoalField idPrefix="import" type="novel" genre={genre} goal={goal} setGoal={setGoal} />
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">
@@ -323,10 +374,41 @@ function ImportManuscriptForm({ workspace, onCancel }: { workspace: Workspace; o
   );
 }
 
-/** The options of the manuscript chosen in the list. */
+/** The name of the book, editable because working titles change before a book is finished. */
+function TitleEditor({ manuscript }: { manuscript: Manuscript }) {
+  const [title, setTitle] = useState(manuscript.title);
+  function save() {
+    const clean = title.trim() || "Untitled manuscript";
+    setTitle(clean);
+    if (clean !== manuscript.title) void patchManuscript(manuscript.id, { title: clean });
+  }
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="book-title">Book title</Label>
+      <Input
+        id="book-title"
+        value={title}
+        className="h-11 border-0 bg-transparent px-0 font-serif text-2xl font-semibold shadow-none focus-visible:ring-0"
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+      <p className="text-xs text-muted-foreground">Working titles are fine. You can rename the book at any time.</p>
+    </div>
+  );
+}
+
+/** The options of the manuscript chosen on the shelf. */
 function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
-  const { navigate, selectManuscript } = useApp();
+  const { manuscript: brought, selectManuscript } = useApp();
   const type = bookTypeOf(manuscript);
+  const isBrought = brought?.id === manuscript.id;
 
   async function remove() {
     if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
@@ -341,26 +423,6 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
 
   return (
     <Card className="max-w-2xl space-y-5 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate font-serif text-xl font-semibold">{manuscript.title}</h2>
-          <p className="text-xs text-muted-foreground">
-            {BOOK_TYPES[type].label}
-            {seriesTitle && manuscript.volumeNumber ? ` - Book ${manuscript.volumeNumber} of ${seriesTitle}` : ""}
-            {" - "}
-            {words.toLocaleString()} words
-            {manuscript.targetWordCount ? ` of ${manuscript.targetWordCount.toLocaleString()}` : ""}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <Button size="sm" onClick={() => navigate("roadmap")}>
-            Open
-          </Button>
-          <Button variant="ghost" size="icon" title="Delete manuscript" onClick={() => void remove()}>
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
       <div className="grid max-w-md grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Stage</Label>
@@ -375,6 +437,13 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           <p className="text-xs text-muted-foreground">Set at creation and locked.</p>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        {BOOK_TYPES[type].label}
+        {seriesTitle && manuscript.volumeNumber ? ` - Book ${manuscript.volumeNumber} of ${seriesTitle}` : ""}
+        {" - "}
+        {words.toLocaleString()} words
+        {isBrought ? " - In the workspace" : " - On the shelf"}
+      </p>
       {manuscript.seriesId ? (
         <Button variant="outline" size="sm" onClick={() => void addBook()}>
           <Plus /> Add another book to this series
@@ -397,20 +466,132 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
           />
         </div>
         <p className="text-xs text-muted-foreground sm:col-span-2">
-          The genre and book type are set when the book is created and stay as they are. Blending in a second genre is the one change allowed later.
+          The genre, type and word-count goal are set when the book is created and stay as they are. Blending in a second genre is the one change allowed later.
         </p>
       </div>
+      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void remove()}>
+        <Trash2 /> Delete this manuscript
+      </Button>
     </Card>
+  );
+}
+
+/** One book's spine on the shelf. Clicking it presents the book's cover and card. */
+function Spine({
+  manuscript,
+  selected,
+  brought,
+  onClick,
+}: {
+  manuscript: Manuscript;
+  selected: boolean;
+  brought: boolean;
+  onClick: () => void;
+}) {
+  const look = mockupLook(genreById(manuscript.genre));
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={manuscript.title}
+      aria-label={`${manuscript.title}${brought ? " (in the workspace)" : ""}`}
+      aria-pressed={selected}
+      className={cn(
+        "relative flex h-44 w-10 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-black/10 shadow-md transition-transform duration-150 hover:-translate-y-2",
+        selected && "-translate-y-2 ring-2 ring-ring",
+      )}
+      style={{ background: look.background, color: look.ink }}
+    >
+      <span
+        className="max-h-full truncate px-1 text-xs font-semibold tracking-wide"
+        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+      >
+        {manuscript.title || "Untitled"}
+      </span>
+      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: look.accent }} aria-hidden="true" />
+      {brought ? <span className="absolute bottom-1.5 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white ring-1 ring-black/20" title="In the workspace" /> : null}
+    </button>
+  );
+}
+
+function Shelf({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      {label ? <p className="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p> : null}
+      <div className="flex min-h-44 flex-wrap items-end gap-1.5 rounded-t-md border-x border-t border-border bg-muted/40 px-2 pt-2">{children}</div>
+      <div className="h-2.5 rounded-b-sm border border-border bg-gradient-to-b from-muted to-accent shadow-sm" aria-hidden="true" />
+    </div>
+  );
+}
+
+function EmptyBookshelf({ onNew, onImport }: { onNew: () => void; onImport: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+      <h2 className="font-serif text-xl font-semibold">Your bookshelf is empty</h2>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Start a book from scratch, or bring in a manuscript you already have. Nothing else is needed yet.
+      </p>
+      <div className="flex flex-wrap justify-center gap-2">
+        <Button onClick={onNew}>
+          <Plus /> New manuscript
+        </Button>
+        <Button variant="outline" onClick={onImport}>
+          <FileUp /> Import manuscript
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The cover presentation: the chosen book's cover, its name and its card. */
+function BookPresentation({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
+  const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
+  const isBrought = brought?.id === manuscript.id;
+  const genre = genreById(manuscript.genre);
+
+  return (
+    <div className="space-y-6">
+      <div key={manuscript.id} className="cover-present flex flex-wrap items-start gap-6">
+        <CoverMockup
+          title={manuscript.title}
+          author={workspace?.name ?? ""}
+          genre={genre}
+          image={manuscript.cover}
+          size="lg"
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {isBrought ? "In the workspace" : "On the shelf"}
+          </p>
+          <TitleEditor key={manuscript.id} manuscript={manuscript} />
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={isBrought} onClick={() => selectManuscript(manuscript.id)}>
+              <ArrowRight /> {isBrought ? "In the workspace" : "Bring to workspace"}
+            </Button>
+            {isBrought ? (
+              <Button variant="outline" onClick={() => navigate("roadmap")}>
+                Open the Roadmap
+              </Button>
+            ) : null}
+          </div>
+          <p className="max-w-md text-xs text-muted-foreground">
+            {isBrought
+              ? "The book screens are unlocked. Choose another book on the shelf and bring it to the workspace to switch; your work is saved first."
+              : "The book screens stay greyed out until you bring this book to the workspace. Bringing it also saves whatever you were working on before."}
+          </p>
+        </div>
+      </div>
+      <ManuscriptOptions manuscript={manuscript} words={words} seriesTitle={seriesTitle} />
+    </div>
   );
 }
 
 export function Manuscripts() {
   const { workspace, manuscripts, manuscript, selectManuscript } = useApp();
   const [pane, setPane] = useState<Pane>("manuscript");
-  // A workspace with no pen name yet opens on the pen name generator in the new manuscript menu.
-  // With no manuscript to show, the right-hand side offers to create one.
+  const [selectedId, setSelectedId] = useState<Id | null>(null);
   const needsPenName = !!workspace && !workspace.name.trim();
-  const shown: Pane = pane === "manuscript" && (!manuscript || needsPenName) ? "new" : pane;
+  const hasBooks = manuscripts.length > 0;
 
   const wordCounts = useLiveQuery(async () => {
     const counts: Record<Id, number> = {};
@@ -425,7 +606,7 @@ export function Manuscripts() {
     return counts;
   }, [manuscripts.map((m) => m.id).join(",")]);
 
-  // Series containers are not books, so they are read separately from the list of books.
+  // Series containers are not books, so they are read separately from the shelf.
   const seriesRows = useLiveQuery(
     async () => (workspace ? db.manuscripts.where("workspaceId").equals(workspace.id).filter((m) => m.type === "series").toArray() : []),
     [workspace?.id],
@@ -433,114 +614,126 @@ export function Manuscripts() {
   const series = [...(seriesRows ?? [])].sort((a, b) => a.title.localeCompare(b.title));
   const standalone = manuscripts.filter((m) => !m.seriesId);
 
-  function bookButton(m: Manuscript, indent: boolean) {
-    const active = shown === "manuscript" && m.id === manuscript?.id;
-    const genre = genreById(m.genre);
-    const blend = genreById(m.blendGenre);
-    const label = indent && m.volumeNumber ? `Book ${m.volumeNumber}` : m.title;
+  const chosen = manuscripts.find((m) => m.id === selectedId) ?? manuscript ?? manuscripts[0];
+  const shown: Pane = pane === "manuscript" && needsPenName && !hasBooks ? "new" : pane;
+  const cancel = hasBooks && chosen ? () => setPane("manuscript") : null;
+
+  function newBook() {
+    setPane("new");
+    setSelectedId(null);
+  }
+  function importBook() {
+    setPane("import");
+    setSelectedId(null);
+  }
+
+  function bookShelf() {
     return (
-      <button
-        key={m.id}
-        onClick={() => {
-          selectManuscript(m.id);
-          setPane("manuscript");
-        }}
-        aria-current={active ? "true" : undefined}
-        className={cn(
-          "w-full rounded-md px-3 py-2 text-left transition-colors",
-          indent && "ml-3 w-[calc(100%-0.75rem)] py-1.5",
-          active ? "bg-accent" : "hover:bg-accent/50",
-        )}
-      >
-        <span className={cn("block truncate font-serif text-sm font-semibold", indent && "font-sans text-xs font-medium")}>{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {(wordCounts?.[m.id] ?? 0).toLocaleString()} words - {STATUS_LABEL[m.status]}
-          {genre ? ` - ${genre.label}` : ""}
-          {blend ? ` / ${blend.label}` : ""}
-        </span>
-      </button>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+        {standalone.length > 0 ? (
+          <Shelf label="Books">
+            {standalone.map((m) => (
+              <Spine
+                key={m.id}
+                manuscript={m}
+                selected={chosen?.id === m.id}
+                brought={manuscript?.id === m.id}
+                onClick={() => {
+                  setSelectedId(m.id);
+                  setPane("manuscript");
+                }}
+              />
+            ))}
+          </Shelf>
+        ) : null}
+        {series.map((s) => {
+          const books = manuscripts
+            .filter((m) => m.seriesId === s.id)
+            .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
+          if (books.length === 0) return null;
+          return (
+            <Shelf key={s.id} label={`${s.title} - ${books.length} ${books.length === 1 ? "book" : "books"}`}>
+              {books.map((m) => (
+                <Spine
+                  key={m.id}
+                  manuscript={m}
+                  selected={chosen?.id === m.id}
+                  brought={manuscript?.id === m.id}
+                  onClick={() => {
+                    setSelectedId(m.id);
+                    setPane("manuscript");
+                  }}
+                />
+              ))}
+            </Shelf>
+          );
+        })}
+      </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
-        title="Manuscripts"
+        title="Bookshelf"
         description={workspace ? `Every book by ${workspace.name || "this workspace"}.` : "Every book in this workspace."}
       />
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-72 shrink-0 flex-col border-r border-border">
-          <div className="space-y-2 border-b border-border p-3">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {workspace ? `${workspace.name || "This workspace"}'s manuscripts` : "Manuscripts"}
-            </p>
-            <Button size="sm" className="w-full" disabled={!workspace} onClick={() => setPane("new")}>
-              <Plus /> New manuscript
-            </Button>
-            <Button size="sm" variant="outline" className="w-full" disabled={!workspace} onClick={() => setPane("import")}>
-              <FileUp /> Import manuscript
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-            {manuscripts.length === 0 && series.length === 0 ? (
-              <p className="p-2 text-sm text-muted-foreground">No manuscripts in this workspace yet.</p>
-            ) : null}
-            {standalone.map((m) => bookButton(m, false))}
-            {series.map((s) => {
-              const books = manuscripts
-                .filter((m) => m.seriesId === s.id)
-                .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
-              return (
-                <div key={s.id} className="space-y-0.5 pt-2">
-                  <p className="px-3 font-serif text-sm font-semibold">{s.title}</p>
-                  <p className="px-3 pb-1 text-xs text-muted-foreground">
-                    Series - {books.length} {books.length === 1 ? "book" : "books"}
-                  </p>
-                  {books.map((m) => bookButton(m, true))}
-                </div>
-              );
-            })}
-          </div>
-          <div className="border-t border-border p-2">
-            <button
-              onClick={() => setPane("author")}
-              aria-current={shown === "author" ? "true" : undefined}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4",
-                shown === "author" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              )}
-            >
-              <UserRound /> About this author
-            </button>
-          </div>
-        </aside>
-
-        <section className="min-w-0 flex-1 overflow-y-auto p-6">
-          {!workspace ? (
-            <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
-          ) : shown === "new" ? (
-            <NewManuscriptForm
-              key="new"
-              workspace={workspace}
-              needsPenName={needsPenName}
-              onCancel={manuscript ? () => setPane("manuscript") : null}
-            />
-          ) : shown === "import" ? (
-            <ImportManuscriptForm key="import" workspace={workspace} onCancel={manuscript ? () => setPane("manuscript") : null} />
-          ) : shown === "author" ? (
-            <div className="max-w-xl">
-              <WorkspaceForm key={workspace.id} workspace={workspace} />
+      {!hasBooks && shown === "manuscript" ? (
+        <EmptyBookshelf onNew={newBook} onImport={importBook} />
+      ) : shown === "new" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <NewManuscriptForm key="new" workspace={workspace!} needsPenName={needsPenName} onCancel={cancel} />
+        </div>
+      ) : shown === "import" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <ImportManuscriptForm key="import" workspace={workspace!} onCancel={cancel} />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <aside className="flex w-72 shrink-0 flex-col border-r border-border">
+            <div className="space-y-2 border-b border-border p-3">
+              <Button size="sm" className="w-full" disabled={!workspace} onClick={newBook}>
+                <Plus /> New manuscript
+              </Button>
+              <Button size="sm" variant="outline" className="w-full" disabled={!workspace} onClick={importBook}>
+                <FileUp /> Import manuscript
+              </Button>
             </div>
-          ) : manuscript ? (
-            <ManuscriptOptions
-              key={manuscript.id}
-              manuscript={manuscript}
-              words={wordCounts?.[manuscript.id] ?? 0}
-              seriesTitle={series.find((s) => s.id === manuscript.seriesId)?.title}
-            />
-          ) : null}
-        </section>
-      </div>
+            {bookShelf()}
+            <div className="border-t border-border p-2">
+              <button
+                onClick={() => setPane("author")}
+                aria-current={shown === "author" ? "true" : undefined}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4",
+                  shown === "author" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                )}
+              >
+                <UserRound /> About this author
+              </button>
+            </div>
+          </aside>
+
+          <section className="min-w-0 flex-1 overflow-y-auto p-6">
+            {!workspace ? (
+              <p className="text-sm text-muted-foreground">Choose a workspace first, then create manuscripts in it.</p>
+            ) : shown === "author" ? (
+              <div className="max-w-xl">
+                <WorkspaceForm key={workspace.id} workspace={workspace} />
+              </div>
+            ) : chosen ? (
+              <BookPresentation
+                key={chosen.id}
+                manuscript={chosen}
+                words={wordCounts?.[chosen.id] ?? 0}
+                seriesTitle={series.find((s) => s.id === chosen.seriesId)?.title}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Choose a book from the shelf.</p>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

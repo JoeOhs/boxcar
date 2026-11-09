@@ -11,10 +11,10 @@ export function NoManuscript() {
       <h2 className="font-serif text-xl font-semibold">No manuscript yet</h2>
       <p className="max-w-sm text-sm text-muted-foreground">
         {workspace
-          ? `Create a manuscript in ${workspace.name ? `the ${workspace.name} workspace` : "this workspace"} to start.`
+          ? `Choose a book on the Bookshelf and bring it to the workspace, or create one in ${workspace.name ? `the ${workspace.name} workspace` : "this workspace"}.`
           : "Create a workspace for an author or pen name, then add a manuscript to it."}
       </p>
-      <Button onClick={() => navigate("manuscripts")}>Go to Manuscripts</Button>
+      <Button onClick={() => navigate("manuscripts")}>Go to Bookshelf</Button>
     </div>
   );
 }

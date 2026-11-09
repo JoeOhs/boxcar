@@ -175,8 +175,51 @@ In April of 2025 I was working in the oilfields of West Texas and the Southeast 
 Add to the plan: yes
 
 - Outcome: finished, and the checks passed
+- Commit: c7f7633f55
 - Cost: $0.27
 
 - Integration: All ten round-11 changes are in. `tsc --noEmit` passes, and the coverage and docs checks are clean. I did not run the app in a browser, so the UI behaviour is checked by reading the code only. (21 files)
+
+## Round 12: a revision
+
+What the person asked for: Changes pinned on the running app:
+1. On /, the button "Manuscripts": Change the "Manuscripts" button to "Bookshelf"
+2. On /, the header "Manuscripts Every book by Ze Caetano.": Change the "Manuscripts" header to "Bookshelf"
+3. On /, the div "Word-count goal 80,000 Set at creation and locked.": There is a contradiction in the Import manuscript card where the Word-count goal for an imported novel defaults to 80,000 words, but upon selecting the appropriate genre for the manuscript (like Self-help) it suggests a typical length that you cannot set.
+4. On /, the div "respect final draft eng 43,893 words - Drafting - Self-help": I want to expand on the manuscript list card by turning it into a virtual bookshelf, that shows the spines of each of the users manuscripts. Selecting a book from the bookshelf animates the books cover being presented to the user and allows them to see the Novels card info. If no manuscripts are saved, the only options are: + New manuscript or Import manuscript. Prior to the point of choosing a book from the shelf or creating a new manuscript, all of the options from Roadmap to Translate will be greyed out until the user selects "Bring to workspace", this will unlock the workspace options and prevent confusion for the user. If the user wishes to work on a different manuscript the previous work will autosave when the user selects the manuscript of choice and clicks "Bring to workspace".
+5. In "Writing desk" (src/screens/Write.tsx · Write), the aside "FRONT MATTER None yet CHAPTERS 1. Untitled 87 Scene 1 87 ..." on /: Only scenes are movable and are isolated to the chapter they are created in. I want every chapter and scene to be movable to any section of the manuscript. I also want a special section labeled "Scarp bin" where users can move any scene or chapter that doesn't quite fit.
+6. On /, the heading "respect final draft eng": Names of manuscripts should be editable because many times, authors will have working titles as placeholders until the book is finalized
+7. In "Writing desk" (src/screens/Write.tsx · Write), the div "Keep the facts, places, quotes and links you need while y..." on /: create a "Researcher" agent that will do extensive research on a topic that the user prompts to have done for a manuscript. Once the research is complete it is added to the Research menu for context.
+8. In "Writing desk" (src/screens/Write.tsx · Write), the list "Chapter status" on /: This manuscript status drop-down menu should not be changeable by the user, but should be based on the actual status of the manuscript: Draft, Revision, Finalized.
+
+Once the manuscript makes it past the developmental editing agent, that will trigger the status change of the manuscript to "Revision".
+
+Once the manuscript completes all of the editing stages performed by the editing agents, it will achieve the status of "Finalized".
+9. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the button "The first pass looks at the "big picture": plot, narrativ..." on /: in the file src/lib/ai.ts - change the protocol of the developmental agent from "editor:
+    "You are the developmental and line Editor at a small publishing house. You give the author honest, specific feedback on pacing, voice, clarity and continuity, and you respect the author's style.",
+  To: "dev-editor: "
+
+You are the Developmental Editor at a small publishing house (also known as a structural or substantive editor). Your focus is on the big-picture elements of a manuscript, such as plot, character development, pacing, argument clarity, and overall structure, rather than grammar or spelling. You give the author honest, specific feedback on pacing, voice, clarity and continuity, and you respect the author's style. You act as a collaborative partner to the author, providing a detailed editorial report that outlines strengths, weaknesses, and actionable suggestions for revision.
+
+Key responsibilities include:
+
+-Analyzing Structure: Identifying plot holes, inconsistent characterization, logical gaps, or poor organization.
+    
+-Providing Feedback: Offering insights on tone, audience appeal, and thematic consistency to ensure the manuscript resonates with its intended readers.
+    
+-Guiding Revision: Suggesting reordering of chapters, deepening of arcs, or tightening of focus, while leaving the actual rewriting to the author.
+10. In "Edit and revisions" (src/screens/Edit.tsx · Edit), the section "Untitled DEDICATION To the man who never raised his voice..." on /: reserve this space for the developmental editors report upon completion. the user should be able to read through the report, hover over any items the editor flagged, and push those items to the writing space for revision. there should be a list of flags the user could jump to on the left hand side of the report. the user should also be able to click a flag and express any questions or concerns about that flag and receive a response from the agent in the "Ask the AI" screen.
+11. In "Writing desk" (src/screens/Write.tsx · Write), the div "Ask the ghostwriter anything about this book." on /: I want to completely reimagine how the user interacts with the Ghostwriter. I want the Ghostwriter to have its own separate writing space that sits side-by-side with the users writing space. Whatever chapter the user is writing in their writing space should be reflected in the Ghostwriters writing space. When the user prompts the Ghostwriter it will be seen in the Ghostwriters writing space BUT NOT be reflected in the users writing space until "pushed" by the user.
+
+The Ghostwriter must have read-only access to the working manuscript, research folder, character sheets, location, and situations for the fullest context.
+12. On /, the button "Outline": Change the "Outline" button to "Universe"
+13. In "Outline workshop" (src/screens/Outline.tsx · Outline), the heading "Outline" on /: I want to completely reimagine how authors approach Outlining, by turning the "Outline" screen into a "Universe" building wiki-style inception page where the user can have an expanded experience building everything about their novel or series of novels. The Universe should appear to the user like a "second-brain", where nodes are created and expanded on, interconnect and color-code based on related tags: like "magic" or "weapons". Character creation should be in depth from personality types to clothing preferences and handicaps. If the user is creating a series of novels, they can refer to the Universe for context. Building out the universe of the users manuscript will help the Outliner agent generate an Outline for the user if prompted.
+14. In "Book Cover workshop" (src/screens/BookCover.tsx · BookCover), the section "Current cover respect final draft eng Ze Caetano No cover..." on /: In addition to the cover of the book, there should be a preview of how the spine and back of the book will look as well.
+Add to the plan: yes
+
+- Outcome: failed before it could finish
+- Cost: $0.12
+
+Still wrong: Integration: OpenCode failed: OpenCode stopped without replying to the task
 
 Written by Ganger from the build's rounds. A round's own commit is the one that contains its entry here.

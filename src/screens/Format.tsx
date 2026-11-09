@@ -51,7 +51,7 @@ function FormatBody({ manuscript }: { manuscript: Manuscript }) {
     setChoosing(true);
     setChoice(null);
     try {
-      const all = chapters ?? [];
+      const all = (chapters ?? []).filter((c) => c.kind !== "scrap");
       const body = all.filter((c) => c.kind === "chapter");
       const first = body[0] ?? all[0];
       const picked = await requestFormatPreset(ai, {

@@ -78,7 +78,7 @@ export async function bigPicture(manuscript: Manuscript): Promise<string> {
     db.outlineItems.where("manuscriptId").equals(manuscript.id).toArray(),
     db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
   ]);
-  const sorted = sortChapters(chapters);
+  const sorted = sortChapters(chapters.filter((chapter) => chapter.kind !== "scrap"));
   const numbers = numberChapters(sorted);
   const parts = [`Title: ${manuscript.title}`];
   const genre = genreContext(genreById(manuscript.genre));
@@ -111,7 +111,7 @@ export interface DevelopmentalResult {
  * saves their notes. If any editor fails, nothing is saved and the error is thrown.
  */
 export async function runDevelopmentalReview(manuscript: Manuscript, settings: AiSettings): Promise<DevelopmentalResult> {
-  const chapters = sortChapters(await db.chapters.where("manuscriptId").equals(manuscript.id).toArray());
+  const chapters = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
   if (!chapters.some((c) => htmlToText(c.content).trim())) {
     throw new Error("Write at least one chapter before the developmental pass.");
   }

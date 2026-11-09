@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import type { Chapter, Manuscript } from "@/db/schema";
-import { chapterLabel, numberChapters, sortChapters } from "./chapters";
+import { bookChapters, chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { countWords } from "./text";
 
 /**
@@ -179,7 +179,7 @@ const DOCUMENT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 /** Builds the editing draft as a .docx file. */
 export async function buildDraftDocx(manuscript: Manuscript, author: string, chaptersIn: Chapter[]): Promise<Blob> {
-  const chapters = sortChapters(chaptersIn);
+  const chapters = sortChapters(bookChapters(chaptersIn));
   const numbers = numberChapters(chapters);
   const sceneBreak = manuscript.format.sceneBreak;
   const words = chapters.reduce((sum, c) => sum + countWords(c.content), 0);

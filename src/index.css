@@ -165,6 +165,22 @@
   background: transparent;
 }
 
+/* A book cover lifted off the shelf and presented to the reader. */
+@keyframes cover-present {
+  from {
+    opacity: 0;
+    transform: perspective(1000px) rotateY(-58deg) translateX(-2.5rem) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1000px) rotateY(0deg) translateX(0) scale(1);
+  }
+}
+.cover-present {
+  transform-origin: left center;
+  animation: cover-present 480ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
 .editor-surface:focus {
   outline: none;
 }

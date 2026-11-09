@@ -156,7 +156,7 @@ export async function buildAudiobook(
   voice: string,
   onProgress: (message: string) => void,
 ): Promise<Blob> {
-  const chapters = sortChapters(chaptersIn);
+  const chapters = sortChapters(chaptersIn.filter((chapter) => chapter.kind !== "scrap"));
   const numbers = numberChapters(chapters);
   const readable = chapters.filter((c) => chapterSpeech(c, numbers.get(c.id), manuscript.format.headingStyle).length > 0);
   if (readable.length === 0) throw new Error("There is no text to read yet. Write a chapter first.");

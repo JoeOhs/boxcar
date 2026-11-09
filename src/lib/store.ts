@@ -21,7 +21,8 @@ import { sortChapters } from "./chapters";
 import { genreById, type Genre } from "./genres";
 import { childKind, type OutlineNode } from "./outline";
 import { seedRoadmap } from "./roadmap";
-import { countWords } from "./text";
+import { newScene, parseScenes, serializeScenes } from "./scenes";
+import { countWords, htmlToText } from "./text";
 
 // ---------------------------------------------------------------------------
 // Workspaces (pen names) and manuscripts
@@ -64,6 +65,8 @@ export async function createManuscript(
   genre?: Genre,
   startOutline = false,
   type: ManuscriptType = "novel",
+  /** A goal the author set while creating the book; the genre's length is used when it is absent. */
+  targetWords?: number,
 ): Promise<Manuscript> {
   const now = Date.now();
   const manuscript: Manuscript = {
@@ -79,7 +82,7 @@ export async function createManuscript(
     status: "outlining",
     type,
     genre: genre?.id,
-    targetWordCount: goalWordCount(genre, type),
+    targetWordCount: Math.max(0, Math.round(targetWords ?? goalWordCount(genre, type))),
     format: { ...DEFAULT_FORMAT },
     createdAt: now,
     updatedAt: now,
@@ -102,6 +105,8 @@ export async function createSeries(
   bookCount: number,
   genre?: Genre,
   startOutline = false,
+  /** A goal the author set per book; each book gets the same one. */
+  targetWords?: number,
 ): Promise<{ series: Manuscript; books: Manuscript[] }> {
   const now = Date.now();
   const cleanTitle = title.trim() || "Untitled series";
@@ -127,7 +132,7 @@ export async function createSeries(
   const books: Manuscript[] = [];
   const count = Math.max(1, Math.min(12, Math.floor(bookCount) || 1));
   for (let n = 1; n <= count; n++) {
-    books.push(await addSeriesBook(series, n, cleanTitle, genre, startOutline));
+    books.push(await addSeriesBook(series, n, cleanTitle, genre, startOutline, targetWords));
   }
   return { series, books };
 }
@@ -138,6 +143,7 @@ async function addSeriesBook(
   seriesTitle: string,
   genre: Genre | undefined,
   startOutline: boolean,
+  targetWords?: number,
 ): Promise<Manuscript> {
   const now = Date.now();
   const book: Manuscript = {
@@ -155,7 +161,7 @@ async function addSeriesBook(
     seriesId: series.id,
     volumeNumber,
     genre: series.genre,
-    targetWordCount: genre?.targetWords ?? BOOK_TYPES.series.targetWords,
+    targetWordCount: Math.max(0, Math.round(targetWords ?? genre?.targetWords ?? BOOK_TYPES.series.targetWords)),
     format: { ...DEFAULT_FORMAT },
     createdAt: now,
     updatedAt: now,
@@ -437,6 +443,58 @@ export async function moveChapter(chapterId: Id, direction: "up" | "down"): Prom
     for (let i = 0; i < group.length; i++) {
       await db.chapters.update(group[i].id, { order: i });
     }
+  });
+}
+
+/**
+ * Puts a chapter in a section (front matter, chapters, back matter or the Scrap bin)
+ * at a position, so any chapter can be moved anywhere in the manuscript.
+ */
+export function moveChapterTo(chapterId: Id, kind: ChapterKind, beforeId: Id | null): Promise<void> {
+  return db.transaction("rw", db.chapters, async () => {
+    const chapter = await db.chapters.get(chapterId);
+    if (!chapter) return;
+    const all = await db.chapters.where("manuscriptId").equals(chapter.manuscriptId).toArray();
+    const orderOf = (a: Chapter, b: Chapter) => a.order - b.order || a.createdAt - b.createdAt;
+    const oldGroup = all.filter((c) => c.kind === chapter.kind && c.id !== chapterId).sort(orderOf);
+    const target = all.filter((c) => c.kind === kind && c.id !== chapterId).sort(orderOf);
+    const at = beforeId ? target.findIndex((c) => c.id === beforeId) : -1;
+    target.splice(at === -1 ? target.length : at, 0, chapter);
+    for (let i = 0; i < target.length; i++) await db.chapters.update(target[i].id, { kind, order: i });
+    if (kind !== chapter.kind) {
+      for (let i = 0; i < oldGroup.length; i++) await db.chapters.update(oldGroup[i].id, { order: i });
+    }
+  });
+}
+
+/** The Scrap bin's chapter for a manuscript, made the first time something is put in the bin. */
+export async function ensureScrapChapter(manuscriptId: Id): Promise<Chapter> {
+  const existing = (await db.chapters.where("manuscriptId").equals(manuscriptId).toArray()).find((c) => c.kind === "scrap");
+  if (existing) return existing;
+  return createChapter(manuscriptId, "scrap", "Scrap bin");
+}
+
+/**
+ * Moves one scene out of its chapter and into another (or into the Scrap bin's
+ * chapter). The scene keeps its id and title, so anything pointing at it still does.
+ */
+export function moveSceneToChapter(fromChapterId: Id, sceneId: Id, toChapterId: Id): Promise<void> {
+  if (fromChapterId === toChapterId) return Promise.resolve();
+  return db.transaction("rw", db.chapters, async () => {
+    const [from, to] = await Promise.all([db.chapters.get(fromChapterId), db.chapters.get(toChapterId)]);
+    if (!from || !to) return;
+    const fromScenes = parseScenes(from.content);
+    const moving = fromScenes.find((scene) => scene.id === sceneId);
+    if (!moving) return;
+    const remaining = fromScenes.filter((scene) => scene.id !== sceneId);
+    const targetScenes = parseScenes(to.content);
+    // An untouched, untitled scene is only a placeholder for an empty chapter.
+    const kept = targetScenes.filter((scene) => htmlToText(scene.html).trim() || scene.title.trim());
+    const now = Date.now();
+    const fromContent = serializeScenes(remaining.length > 0 ? remaining : [newScene()]);
+    const toContent = serializeScenes([...kept, moving]);
+    await db.chapters.update(from.id, { content: fromContent, wordCount: countWords(fromContent), updatedAt: now });
+    await db.chapters.update(to.id, { content: toContent, wordCount: countWords(toContent), updatedAt: now });
   });
 }
 

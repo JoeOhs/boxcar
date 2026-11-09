@@ -21,7 +21,7 @@ import { Manuscripts } from "@/screens/Manuscripts";
 import { Roadmap } from "@/screens/Roadmap";
 import { WorkspaceGate } from "@/screens/WorkspaceGate";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
-import { Outline } from "@/screens/Outline";
+import { Universe } from "@/screens/Universe";
 import { Write } from "@/screens/Write";
 import { Edit } from "@/screens/Edit";
 import { BookCover } from "@/screens/BookCover";
@@ -35,9 +35,9 @@ import { Button } from "@/components/ui/button";
 const SIDEBAR_KEY = "boxcar.sidebarCollapsed";
 
 const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
-  { screen: "manuscripts", label: "Manuscripts", icon: <Library /> },
+  { screen: "manuscripts", label: "Bookshelf", icon: <Library /> },
   { screen: "roadmap", label: "Roadmap", icon: <SquareKanban /> },
-  { screen: "outline", label: "Outline", icon: <ListTree /> },
+  { screen: "universe", label: "Universe", icon: <ListTree /> },
   { screen: "write", label: "Write", icon: <PenLine /> },
   { screen: "edit", label: "Edit", icon: <SpellCheck /> },
   { screen: "format", label: "Format", icon: <LayoutTemplate /> },
@@ -46,14 +46,17 @@ const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
   { screen: "translate", label: "Translate", icon: <Languages /> },
 ];
 
+/** Bookshelf and Settings are always open; the book screens need a book in the workspace. */
+const OPEN_WITHOUT_BOOK: Screen[] = ["manuscripts", "settings"];
+
 function CurrentScreen({ screen }: { screen: Screen }) {
   switch (screen) {
     case "manuscripts":
       return <Manuscripts />;
     case "roadmap":
       return <Roadmap />;
-    case "outline":
-      return <Outline />;
+    case "universe":
+      return <Universe />;
     case "write":
       return <Write />;
     case "edit":
@@ -72,18 +75,25 @@ function CurrentScreen({ screen }: { screen: Screen }) {
 }
 
 function NavButton({ screen, label, icon, collapsed }: { screen: Screen; label: string; icon: ReactNode; collapsed: boolean }) {
-  const { screen: current, navigate } = useApp();
+  const { screen: current, navigate, manuscript } = useApp();
   const active = current === screen;
+  const locked = !manuscript && !OPEN_WITHOUT_BOOK.includes(screen);
+  const title = locked ? "Bring a manuscript to the workspace first" : collapsed ? label : undefined;
   return (
     <button
       onClick={() => navigate(screen)}
+      disabled={locked}
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
-      title={collapsed ? label : undefined}
+      title={title}
       className={cn(
         "flex w-full items-center gap-3 rounded-md py-2 text-sm transition-colors [&_svg]:size-4",
         collapsed ? "justify-center px-0" : "px-3",
-        active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        locked
+          ? "cursor-not-allowed text-muted-foreground/40"
+          : active
+            ? "bg-accent font-medium text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
     >
       {icon}

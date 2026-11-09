@@ -142,3 +142,23 @@ export async function reopenStage(manuscript: Manuscript, stage: EditStage): Pro
 export async function setStyleGuide(manuscript: Manuscript, styleGuide: string): Promise<void> {
   await save(manuscript, { ...workflowOf(manuscript), styleGuide });
 }
+
+/** The manuscript's own status, worked out from the editing passes rather than set by hand. */
+export type ManuscriptPhase = "draft" | "revision" | "finalized";
+
+export const MANUSCRIPT_PHASE_LABEL: Record<ManuscriptPhase, string> = {
+  draft: "Draft",
+  revision: "Revision",
+  finalized: "Finalized",
+};
+
+/**
+ * Draft until the developmental editors have finished their pass, Revision from
+ * then until every editing pass is done, and Finalized once all four are done.
+ */
+export function manuscriptPhase(manuscript: Manuscript): ManuscriptPhase {
+  const workflow = workflowOf(manuscript);
+  if (EDIT_STAGES.every((stage) => workflow.completed.includes(stage.id))) return "finalized";
+  if (workflow.completed.includes("developmental")) return "revision";
+  return "draft";
+}

@@ -16,7 +16,7 @@ import {
 import { patchManuscript, patchWorkspace } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
-import { CoverImage, CoverMockup } from "@/components/CoverMockup";
+import { BookJacket, CoverImage, CoverMockup } from "@/components/CoverMockup";
 import { NoManuscript } from "@/components/NoManuscript";
 import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -288,6 +288,22 @@ function BookCoverBody({ manuscript }: { manuscript: Manuscript }) {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-sm font-medium">The whole jacket</h2>
+            <p className="text-xs text-muted-foreground">
+              The back cover with the book's description, the spine, and the front cover as they sit together.
+            </p>
+            <div className="overflow-x-auto pb-2">
+              <BookJacket
+                title={manuscript.title}
+                author={author}
+                genre={genre}
+                image={manuscript.cover}
+                description={manuscript.description}
+              />
+            </div>
           </div>
 
           <div className="space-y-3">

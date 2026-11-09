@@ -190,8 +190,41 @@ export interface StoryEntry {
   updatedAt: Timestamp;
 }
 
-export type ChapterKind = "front" | "chapter" | "back";
+/** "scrap" is the Scrap bin: chapters and scenes kept for later but left out of the book. */
+export type ChapterKind = "front" | "chapter" | "back" | "scrap";
 export type ChapterStatus = "draft" | "revised" | "final";
+
+/** What kind of wiki page a Universe node is. Characters, places and happenings come first; the rest is the wider world. */
+export type UniverseNodeKind = "character" | "location" | "situation" | "concept" | "item" | "faction" | "event";
+
+/** One field on a Universe node: a label and what the author wrote under it, e.g. "Clothing preferences". */
+export interface UniverseField {
+  id: Id;
+  label: string;
+  value: string;
+}
+
+/**
+ * One node of a book's Universe: the wiki-style second brain behind the outline.
+ * Nodes carry free tags (which give them their colour), an expandable set of
+ * labelled fields, and links to other nodes.
+ */
+export interface UniverseNode {
+  id: Id;
+  manuscriptId: Id;
+  kind: UniverseNodeKind;
+  name: string;
+  /** A few sentences saying what this is and why it matters to the book. */
+  summary: string;
+  /** Related tags such as "magic" or "weapons". They decide the node's colour and group related nodes. */
+  tags: string[];
+  /** The expanded detail: personality, clothing, handicaps, rules of magic, and so on. */
+  fields: UniverseField[];
+  /** Ids of the other Universe nodes this one connects to. */
+  links: Id[];
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
 
 /** One written section of the book: front matter, a chapter, or back matter. */
 export interface Chapter {
@@ -258,7 +291,7 @@ export interface Suggestion {
 }
 
 /** The AI staff: each role of the publishing house. */
-export type AgentRole = "outliner" | "editor" | "proofreader" | "formatter" | "ghostwriter";
+export type AgentRole = "outliner" | "editor" | "proofreader" | "formatter" | "ghostwriter" | "researcher";
 
 /** One message in a conversation with an AI role about a manuscript. */
 export interface AgentMessage {
@@ -396,6 +429,7 @@ export class BoxcarDB extends Dexie {
   apiKeys!: Table<StoredApiKey, Id>;
   roadmapCards!: Table<RoadmapCard, Id>;
   researchNotes!: Table<ResearchNote, Id>;
+  universeNodes!: Table<UniverseNode, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -433,6 +467,36 @@ export class BoxcarDB extends Dexie {
     this.version(6).stores({
       storyEntries: "id, manuscriptId, kind, updatedAt",
     });
+    // Version 7 turns the Outline screen into the Universe: wiki nodes with tags, fields
+    // and links. The older story entries are moved across so nothing written is lost.
+    this.version(7)
+      .stores({
+        universeNodes: "id, manuscriptId, kind, updatedAt",
+      })
+      .upgrade(async (tx) => {
+        const old = (await tx.table("storyEntries").toArray()) as {
+          id: Id;
+          manuscriptId: Id;
+          kind: string;
+          name: string;
+          description: string;
+          createdAt: Timestamp;
+          updatedAt: Timestamp;
+        }[];
+        const nodes: UniverseNode[] = old.map((entry) => ({
+          id: entry.id,
+          manuscriptId: entry.manuscriptId,
+          kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
+          name: entry.name,
+          summary: entry.description,
+          tags: [],
+          fields: [],
+          links: [],
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt,
+        }));
+        if (nodes.length > 0) await tx.table("universeNodes").bulkAdd(nodes);
+      });
   }
 }
 
@@ -483,10 +547,12 @@ export async function deleteManuscript(manuscriptId: Id): Promise<void> {
       db.coverConcepts,
       db.roadmapCards,
       db.researchNotes,
+      db.universeNodes,
     ],
     async () => {
       await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
       await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
+      await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
       await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
       await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
       await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();

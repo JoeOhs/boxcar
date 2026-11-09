@@ -1,11 +1,15 @@
 import { useRef, useState } from "react";
-import { BookOpen, FileUp, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
-import { type Id, type ResearchNote } from "@/db/schema";
+import { useLiveQuery } from "dexie-react-hooks";
+import { BookOpen, FileUp, Link as LinkIcon, Plus, Sparkles, Trash2 } from "lucide-react";
+import { db, type Id, type ResearchNote } from "@/db/schema";
+import { aiReachable, useAiSettings } from "@/lib/ai";
 import { IMPORT_ACCEPT } from "@/lib/documents";
-import { useResearchNotes } from "@/lib/hooks";
+import { useOnline, useResearchNotes } from "@/lib/hooks";
+import { runResearcher } from "@/lib/researcher";
 import { createResearchNote, deleteResearchNote, patchResearchNote } from "@/lib/store";
 import { importResearchFile } from "@/lib/research";
 import { cn } from "@/lib/utils";
+import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +28,28 @@ export function ResearchPanel({ manuscriptId }: { manuscriptId: Id }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const selected = notes?.find((n) => n.id === selectedId);
+  const manuscript = useLiveQuery(() => db.manuscripts.get(manuscriptId), [manuscriptId]);
+  const ai = useAiSettings();
+  const online = useOnline();
+  const { navigate } = useApp();
+  const [topic, setTopic] = useState("");
+  const [researching, setResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+
+  async function research() {
+    if (!ai || !manuscript || !topic.trim() || researching) return;
+    setResearching(true);
+    setResearchError(null);
+    try {
+      const created = await runResearcher(ai, manuscript, topic);
+      setTopic("");
+      setSelectedId(created.id);
+    } catch (e) {
+      setResearchError(e instanceof Error ? e.message : "The Researcher could not finish.");
+    } finally {
+      setResearching(false);
+    }
+  }
 
   async function addItem(kind: "note" | "link") {
     setError(null);
@@ -78,6 +104,41 @@ export function ResearchPanel({ manuscriptId }: { manuscriptId: Id }) {
             if (file) void addFile(file);
           }}
         />
+      </div>
+      <div className="shrink-0 space-y-2 border-b border-border bg-muted/30 px-3 py-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium">
+          <Sparkles className="size-3.5" /> Researcher
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Name a topic. The Researcher reads the book's brief and brings back notes, saved here as an item you can edit.
+        </p>
+        <Textarea
+          value={topic}
+          rows={2}
+          hint="e.g. How did blacksmiths forge swords in 14th-century England?"
+          aria-label="What should the Researcher look into?"
+          onChange={(e) => setTopic(e.target.value)}
+          disabled={!ai}
+        />
+        {ai === null ? (
+          <p className="text-xs text-muted-foreground">
+            The Researcher uses your own AI key.{" "}
+            <button className="underline" onClick={() => navigate("settings")}>
+              Add it in Settings
+            </button>
+            .
+          </p>
+        ) : null}
+        {!aiReachable(ai, online) ? <p className="text-xs text-muted-foreground">Offline: research needs a connection.</p> : null}
+        <Button
+          size="sm"
+          className="w-full"
+          disabled={!ai || !manuscript || !topic.trim() || researching || !aiReachable(ai, online)}
+          onClick={() => void research()}
+        >
+          <Sparkles /> {researching ? "Researching..." : "Research this topic"}
+        </Button>
+        {researchError ? <p className="text-xs text-destructive">{researchError}</p> : null}
       </div>
       {error ? <p className="px-4 pt-2 text-xs text-destructive">{error}</p> : null}
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -1,5 +1,6 @@
-import type { ChapterKind, Manuscript, Workspace } from "@/db/schema";
+import type { ChapterKind, Manuscript, ManuscriptType, Workspace } from "@/db/schema";
 import { readDocument, titleFromFileName, type DocBlock, type ReadDocument } from "./documents";
+import type { Genre } from "./genres";
 import { createManuscript, createChapter, patchManuscript } from "./store";
 import { countWords, escapeHtml } from "./text";
 
@@ -142,16 +143,27 @@ export async function planImport(file: File): Promise<ImportPlan> {
   };
 }
 
-/** Creates the manuscript and its chapters in a workspace. */
-export async function importManuscript(workspace: Workspace, plan: ImportPlan, title = plan.title): Promise<Manuscript> {
-  const manuscript = await createManuscript(workspace, title);
+/**
+ * Creates the manuscript and its chapters in a workspace. The genre chosen in the
+ * import card sets the book's target length and its genre, and the author may set
+ * a word-count goal of their own before the import.
+ */
+export async function importManuscript(
+  workspace: Workspace,
+  plan: ImportPlan,
+  title = plan.title,
+  genre?: Genre,
+  targetWords?: number,
+  type: ManuscriptType = "novel",
+): Promise<Manuscript> {
+  const manuscript = await createManuscript(workspace, title, genre, false, type, targetWords);
   for (const chapter of plan.chapters) {
     await createChapter(manuscript.id, chapter.kind, chapter.title, chapter.html);
   }
   await patchManuscript(manuscript.id, {
     status: "drafting",
     description: plan.description ?? "",
-    keywords: plan.keywords.slice(0, 7),
+    ...(plan.keywords.length > 0 ? { keywords: plan.keywords.slice(0, 7) } : {}),
     language: plan.language?.trim() || "en",
   });
   return manuscript;

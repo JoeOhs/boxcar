@@ -51,7 +51,9 @@ export async function createTranslation(source: Manuscript, target: TargetLangua
     createdAt: now,
     updatedAt: now,
   };
-  const sourceChapters = sortChapters(await db.chapters.where("manuscriptId").equals(source.id).toArray());
+  const sourceChapters = sortChapters(
+    (await db.chapters.where("manuscriptId").equals(source.id).toArray()).filter((chapter) => chapter.kind !== "scrap"),
+  );
   await db.transaction("rw", db.manuscripts, db.chapters, async () => {
     await db.manuscripts.add(translation);
     await db.chapters.bulkAdd(

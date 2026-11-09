@@ -69,6 +69,71 @@ export function CoverImage({ image, alt, className }: { image: Blob; alt: string
   );
 }
 
+/**
+ * The whole jacket: the back cover, the spine and the front cover side by side,
+ * so the author can see how the book will look in the round. The back uses the
+ * book's description; the front uses the cover picture once there is one.
+ */
+export function BookJacket({
+  title,
+  author,
+  genre,
+  image,
+  description,
+}: {
+  title: string;
+  author: string;
+  genre: Genre | undefined;
+  image?: Blob;
+  description: string;
+}) {
+  const url = useObjectUrl(image);
+  const look = mockupLook(genre);
+  const titleText = title.trim() || "Untitled";
+  const authorText = author.trim() || "Your pen name";
+  const style: CSSProperties = { background: look.background, color: look.ink, fontFamily: look.fontFamily };
+  return (
+    <div className="flex items-stretch" role="img" aria-label={`Book jacket for ${titleText} by ${authorText}: back, spine and front`}>
+      <div className="flex h-72 w-48 flex-col justify-between overflow-hidden rounded-l-sm p-3 text-left shadow-md ring-1 ring-black/10" style={style}>
+        <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: look.accent }}>
+          {titleText}
+        </p>
+        <p className="max-h-36 overflow-hidden whitespace-pre-wrap text-[9px] leading-snug opacity-80">
+          {description.trim() || "The back-cover description you write for Amazon KDP appears here."}
+        </p>
+        <div className="flex items-end justify-between gap-2">
+          <p className="text-[8px] opacity-70">{authorText}</p>
+          <div className="h-9 w-14 bg-white/90 p-0.5" aria-hidden="true">
+            <div
+              className="h-full w-full"
+              style={{ background: "repeating-linear-gradient(90deg, #111 0 1px, transparent 1px 3px)" }}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex h-72 w-6 items-center justify-center overflow-hidden shadow-md ring-1 ring-black/10" style={style}>
+        <span
+          className="max-h-64 truncate px-0.5 text-[10px] font-semibold tracking-wide"
+          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        >
+          {titleText} · {authorText}
+        </span>
+      </div>
+      {url ? (
+        <img src={url} alt={`Front cover of ${titleText}`} className="h-72 w-48 rounded-r-sm object-cover shadow-md ring-1 ring-black/10" />
+      ) : (
+        <div className="relative flex h-72 w-48 flex-col items-center justify-between overflow-hidden rounded-r-sm p-4 text-center shadow-md ring-1 ring-black/10" style={style}>
+          <div className="absolute inset-x-0 top-0 h-1" style={{ background: look.accent }} aria-hidden="true" />
+          <p className={cn("mt-6 text-xl font-semibold leading-tight", look.uppercase && "uppercase tracking-wide")}>{titleText}</p>
+          <p className={cn("text-sm font-medium", look.uppercase && "uppercase tracking-widest")} style={{ color: look.accent }}>
+            {authorText}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type MockupSize = "sm" | "lg" | "xl";
 
 const SIZE: Record<MockupSize, { box: string; title: string; author: string }> = {

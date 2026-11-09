@@ -21,15 +21,17 @@ interface Props {
   model?: string;
   /** Optional button on each reply, e.g. to copy it into the outline notes. */
   onUseReply?: { label: string; run: (text: string) => void };
+  /** A question to start the message box with, e.g. a flag pushed from the developmental report. */
+  initialText?: string;
 }
 
 /** A conversation with one AI role, saved per manuscript so it can be read offline. */
-export function AgentChat({ manuscriptId, role, getContext, persona, model, quickPrompts, onUseReply }: Props) {
+export function AgentChat({ manuscriptId, role, getContext, persona, model, quickPrompts, onUseReply, initialText }: Props) {
   const { navigate } = useApp();
   const ai = useAiSettings();
   const online = useOnline();
   const reachable = aiReachable(ai, online);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialText ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);

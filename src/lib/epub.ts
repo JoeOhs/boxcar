@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import type { Chapter, FormatSettings, Manuscript, TrimSize } from "@/db/schema";
-import { chapterLabel, numberChapters, sortChapters } from "./chapters";
+import { bookChapters, chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { resolveFormat } from "./formatPresets";
 import { escapeHtml } from "./text";
 
@@ -154,7 +154,7 @@ function completeManuscript(m: Manuscript): Manuscript {
 export async function buildEpub(manuscriptIn: Manuscript, author: string, chaptersIn: Chapter[]): Promise<Blob> {
   const manuscript = completeManuscript(manuscriptIn);
   const f = resolveFormat(manuscript.format);
-  const chapters = sortChapters(chaptersIn);
+  const chapters = sortChapters(bookChapters(chaptersIn));
   const numbers = numberChapters(chapters);
   const language = manuscript.language.trim() || "en";
   const fullTitle = manuscript.subtitle.trim() ? `${manuscript.title}: ${manuscript.subtitle.trim()}` : manuscript.title;
@@ -305,7 +305,7 @@ export function buildPreviewDocument(
 ): string {
   const manuscript = completeManuscript(manuscriptIn);
   const f = resolveFormat(formatIn);
-  const chapters = sortChapters(chaptersIn);
+  const chapters = sortChapters(bookChapters(chaptersIn));
   const numbers = numberChapters(chapters);
   const trim = TRIM_SIZES[f.trimSize];
   const toc = f.includeTableOfContents
