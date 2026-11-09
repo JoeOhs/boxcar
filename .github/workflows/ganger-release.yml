@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      PRODUCT: "boxcar Publishing Studio"
+      PRODUCT: "Boxcar Publishing Studio"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

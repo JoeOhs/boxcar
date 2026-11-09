@@ -1,10 +1,10 @@
 {
   "name": "boxcar-studio-58313e",
-  "productName": "boxcar Publishing Studio",
-  "version": "1.0.1",
-  "description": "boxcar Publishing Studio, made with Ganger.",
+  "productName": "Boxcar Publishing Studio",
+  "version": "1.0.2",
+  "description": "Boxcar Publishing Studio, made with Ganger.",
   "author": {
-    "name": "boxcar Publishing Studio"
+    "name": "Boxcar Publishing Studio"
   },
   "main": "main.js",
   "private": true,
@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "app.ganger.boxcarstudio58313e",
-    "productName": "boxcar Publishing Studio",
+    "productName": "Boxcar Publishing Studio",
     "directories": {
       "output": "out"
     },
