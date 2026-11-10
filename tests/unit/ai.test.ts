@@ -118,19 +118,34 @@ describe("requestStageReview / requestFormatPreset consumers", () => {
 });
 
 describe("applying a suggestion (replaceInHtml)", () => {
+  const html = (r: ReturnType<typeof replaceInHtml>) => (r.ok ? r.html : r.reason);
   it("replaces inside a text node and keeps formatting", () => {
-    expect(replaceInHtml("<p>The <em>cat</em> sat.</p>", "sat", "lay")).toBe("<p>The <em>cat</em> lay.</p>");
+    expect(html(replaceInHtml("<p>The <em>cat</em> sat.</p>", "sat", "lay"))).toBe("<p>The <em>cat</em> lay.</p>");
   });
-  it("returns null when the passage is not found (chapter changed)", () => {
-    expect(replaceInHtml("<p>New text</p>", "old text", "x")).toBeNull();
-    expect(replaceInHtml("<p>x</p>", "", "y")).toBeNull();
+  it("reports a missing passage (chapter changed) or an empty one", () => {
+    expect(html(replaceInHtml("<p>New text</p>", "old text", "x"))).toBe("missing");
+    expect(html(replaceInHtml("<p>x</p>", "", "y"))).toBe("missing");
   });
-  it.fails("BUG-ambiguous-match: a passage that appears twice is applied to the first occurrence without warning", () => {
-    const out = replaceInHtml("<p>He said no.</p><p>She said no.</p>", "said no", "said yes");
-    expect(out).toBeNull(); // should refuse or ask; instead silently edits paragraph 1
+  it("F04: a passage that appears twice is refused, not applied to the first match", () => {
+    const src = "<p>He said no.</p><p>She said no.</p>";
+    expect(html(replaceInHtml(src, "said no", "said yes"))).toBe("ambiguous");
+    expect(html(replaceInHtml("<p>no no</p>", "no", "yes"))).toBe("ambiguous");
+    expect(html(replaceInHtml(src, "She said no", "She said yes"))).toBe("<p>He said no.</p><p>She said yes.</p>");
   });
-  it.fails("BUG-format-loss: a passage spanning formatting wipes all inline formatting in that paragraph", () => {
-    const out = replaceInHtml("<p><strong>Bold</strong> and <em>very</em> long</p>", "and very", "and quite")!;
-    expect(out).toContain("<strong>Bold</strong>");
+  it("F04: a passage spanning formatting keeps the formatting around it", () => {
+    expect(html(replaceInHtml("<p><strong>Bold</strong> and <em>very</em> long</p>", "and very", "and quite")))
+      .toBe("<p><strong>Bold</strong> and quite long</p>");
+    expect(html(replaceInHtml("<p>A <em>big red</em> dog</p>", "red dog", "blue cat")))
+      .toBe("<p>A <em>big </em>blue cat</p>");
+  });
+  it("F04: deletions, non-breaking spaces, emoji and RTL text", () => {
+    expect(html(replaceInHtml("<p>Very very good.</p>", "very ", ""))).toBe("<p>Very good.</p>");
+    expect(html(replaceInHtml("<p>Mr. Smith left.</p>", "Mr. Smith", "Dr. Smith"))).toBe("<p>Dr. Smith left.</p>");
+    expect(html(replaceInHtml("<p>Hi 👋 there</p>", "👋 there", "👋 friend"))).toBe("<p>Hi 👋 friend</p>");
+    expect(html(replaceInHtml("<p>مرحبا بالعالم</p>", "بالعالم", "بكم"))).toBe("<p>مرحبا بكم</p>");
+  });
+  it("F04: text in scene sections and bare text are both reachable", () => {
+    expect(html(replaceInHtml('<section data-segment="a"><p>Teh end.</p></section>', "Teh", "The"))).toBe('<section data-segment="a"><p>The end.</p></section>');
+    expect(html(replaceInHtml("Loose teh text", "teh", "the"))).toBe("Loose the text");
   });
 });

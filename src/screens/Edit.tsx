@@ -473,17 +473,24 @@ function SuggestionsPanel({
       await db.suggestions.update(s.id, { status: "accepted" });
       return;
     }
-    const fresh = await db.chapters.get(chapter.id);
-    if (!fresh) return;
-    const next = replaceInHtml(fresh.content, s.original, s.replacement);
-    if (next === null) {
+    // Read, snapshot, save and mark accepted in one transaction: all of it happens or none of it.
+    const outcome = await db.transaction("rw", db.chapters, db.revisions, db.suggestions, async () => {
+      const fresh = await db.chapters.get(s.chapterId);
+      if (!fresh) return "missing" as const;
+      const result = replaceInHtml(fresh.content, s.original, s.replacement);
+      if (!result.ok) return result.reason;
+      await snapshotChapter(fresh, "Before accepting a suggestion");
+      await saveChapter(fresh.id, { content: result.html });
+      await db.suggestions.update(s.id, { status: "accepted" });
+      return "applied" as const;
+    });
+    if (outcome === "missing") {
       setMessage({ ok: false, text: "That passage is no longer in the chapter, so the change could not be applied." });
-      return;
+    } else if (outcome === "ambiguous") {
+      setMessage({ ok: false, text: "That passage appears more than once in the chapter, so it was not changed. Make the edit by hand, or reject it." });
+    } else {
+      setMessage({ ok: true, text: "Applied. The earlier text is kept under Revisions." });
     }
-    await snapshotChapter(fresh, "Before accepting a suggestion");
-    await saveChapter(fresh.id, { content: next });
-    await db.suggestions.update(s.id, { status: "accepted" });
-    setMessage({ ok: true, text: "Applied. The earlier text is kept under Revisions." });
   }
 
   async function review() {
