@@ -12,10 +12,16 @@ const URL_ATTRIBUTES = ["href", "src", "xlink:href", "action", "formaction", "sr
  * clicked (javascript:, data:, vbscript: and the like) must return false.
  */
 export function isSafeUrl(value: string): boolean {
-  // TODO(human): decide which addresses are allowed to stay in AI-written text.
-  void value;
-  return false;
+  // Browsers skip whitespace and control characters inside a scheme ("java\nscript:"), so do the same before checking.
+  const cleaned = value.replace(/[\u0000- \u007f-\u009f]/g, "").toLowerCase();
+  if (!cleaned) return false;
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(cleaned)?.[1];
+  // No scheme: an anchor or a relative address, which cannot run anything.
+  if (scheme === undefined) return true;
+  return SAFE_SCHEMES.has(scheme);
 }
+
+const SAFE_SCHEMES = new Set(["http", "https", "mailto"]);
 
 /** Removes anything that could run or restyle the page from a parsed document's body. */
 export function sanitizeDocument(doc: Document): void {
