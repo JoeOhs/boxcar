@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript } from "@/db/schema";
 import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL } from "./providers";
+import { syncEditCards } from "./roadmap";
 import { patchManuscript } from "./store";
 
 /** One pass of the editing workflow. */
@@ -114,7 +115,8 @@ export function workflowOf(manuscript: Manuscript): EditWorkflow {
 }
 
 function save(manuscript: Manuscript, next: EditWorkflow): Promise<void> {
-  return patchManuscript(manuscript.id, { editWorkflow: next });
+  // The Roadmap edit cards follow the passes, so they are brought in line after every change.
+  return patchManuscript(manuscript.id, { editWorkflow: next }).then(() => syncEditCards(manuscript.id));
 }
 
 /** Moves to a pass, if it is open. */

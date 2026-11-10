@@ -65,12 +65,44 @@ describe("roadmap", () => {
       if (c.column === "outlining") await setRoadmapCardDone(c.id, true);
     expect((await db.manuscripts.get(m.id))!.status).toBe("outlining");
   });
-  it.fails("BUG-two-sources: finishing all four edit passes leaves the Roadmap stage at outlining", async () => {
+  const editCards = async (id: string) =>
+    Object.fromEntries((await db.roadmapCards.where("manuscriptId").equals(id).toArray()).filter((c) => c.editStage).map((c) => [c.editStage, c.done]));
+  const PASSES = ["developmental", "line", "copy", "proofread"] as const;
+
+  it("F05: finishing edit passes ticks their Roadmap cards; reopening unticks", async () => {
     const { m } = await seedBook();
-    for (const s of ["developmental", "line", "copy", "proofread"] as const) await completeStage((await db.manuscripts.get(m.id))!, s);
+    expect(await editCards(m.id)).toEqual({ developmental: false, line: false, copy: false, proofread: false });
+    await completeStage((await db.manuscripts.get(m.id))!, "developmental");
+    await completeStage((await db.manuscripts.get(m.id))!, "line");
+    expect(await editCards(m.id)).toEqual({ developmental: true, line: true, copy: false, proofread: false });
+    await reopenStage((await db.manuscripts.get(m.id))!, "line");
+    expect(await editCards(m.id)).toEqual({ developmental: true, line: false, copy: false, proofread: false });
+  });
+  it("F05: with the draft done, finishing all passes moves the stage to formatting (and it never goes back)", async () => {
+    const { m } = await seedBook();
+    for (const c of await db.roadmapCards.where("manuscriptId").equals(m.id).toArray())
+      if (c.column === "drafting") await setRoadmapCardDone(c.id, true);
+    expect((await db.manuscripts.get(m.id))!.status).toBe("editing");
+    for (const s of PASSES) await completeStage((await db.manuscripts.get(m.id))!, s);
     const after = (await db.manuscripts.get(m.id))!;
-    expect(manuscriptPhase(after)).toBe("finalized");
-    expect(after.status).not.toBe("outlining");
+    expect([manuscriptPhase(after), after.status]).toEqual(["finalized", "formatting"]);
+    await reopenStage(after, "copy");
+    expect((await db.manuscripts.get(m.id))!.status).toBe("formatting");
+  });
+  it("F05: an edit card cannot be ticked by hand", async () => {
+    const { m } = await seedBook();
+    const card = (await db.roadmapCards.where("manuscriptId").equals(m.id).toArray()).find((c) => c.editStage === "line")!;
+    await setRoadmapCardDone(card.id, true);
+    expect((await db.roadmapCards.get(card.id))!.done).toBe(false);
+  });
+  it("F05: an older book's edit cards are linked and synced when the Roadmap opens", async () => {
+    const { m } = await seedBook();
+    const cards = await db.roadmapCards.where("manuscriptId").equals(m.id).toArray();
+    // Make it look like a book seeded before this change: no editStage, cards ticked by hand.
+    for (const c of cards) if (c.editStage) await db.roadmapCards.update(c.id, { editStage: undefined, done: true });
+    await db.manuscripts.update(m.id, { editWorkflow: { stage: "line", completed: ["developmental"], styleGuide: "" } });
+    await seedRoadmap(m.id);
+    expect(await editCards(m.id)).toEqual({ developmental: true, line: false, copy: false, proofread: false });
   });
 });
 

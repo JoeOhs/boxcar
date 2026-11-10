@@ -121,6 +121,11 @@ test("export EPUB/DOCX, format, edit pass, translate, backup, offline", async ({
       await page.waitForTimeout(3000);
       await shot(page, info, "24-edit-after-run");
       console.log("EDIT-RUN", (await page.locator("main").innerText()).slice(0, 600));
+      await nav(page, "Roadmap");
+      const devCard = page.locator("label", { hasText: "Developmental edit" }).locator("input[type=checkbox]");
+      await expect(devCard).toBeChecked();
+      await expect(devCard).toBeDisabled();
+      await shot(page, info, "24b-roadmap-after-dev-pass");
     }
   });
 

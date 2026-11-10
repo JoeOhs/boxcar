@@ -378,6 +378,8 @@ export interface RoadmapCard {
   screen?: "outline" | "write" | "edit" | "format" | "cover" | "export";
   /** An optional card does not hold up the stage: the author may skip it. */
   optional?: boolean;
+  /** The editing pass this card stands for. Such a card is ticked by finishing the pass in Edit, not by hand. */
+  editStage?: EditStage;
   done: boolean;
   /** Position within the column; sort ascending. */
   order: number;
