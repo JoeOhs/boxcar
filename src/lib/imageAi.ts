@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { type CoverBrief, type ImageAiSettings, type ImageProvider } from "@/db/schema";
 import { CATEGORY_LABEL, type Genre } from "./genres";
 import { getImageAiSettings } from "./keyVault";
+import { fetchWithTimeout, RequestTimeoutError } from "./request";
 
 /**
  * Image generation for the Book Cover workshop. Like the text AI staff it runs on
@@ -140,13 +141,14 @@ export async function generateCoverImage(settings: ImageAiSettings, prompt: stri
   let response: Response;
   try {
     if (settings.provider === "openai") {
-      response = await fetch("https://api.openai.com/v1/images/generations", {
+      response = await fetchWithTimeout("The image provider", "https://api.openai.com/v1/images/generations", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         body: JSON.stringify(openAiRequestFor(model, prompt)),
       });
     } else {
-      response = await fetch(
+      response = await fetchWithTimeout(
+        "The image provider",
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         {
           method: "POST",
@@ -155,7 +157,8 @@ export async function generateCoverImage(settings: ImageAiSettings, prompt: stri
         },
       );
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof RequestTimeoutError) throw e;
     throw new Error("Could not reach the image provider. Check your connection and try again.");
   }
 
@@ -165,7 +168,7 @@ export async function generateCoverImage(settings: ImageAiSettings, prompt: stri
     const first = body?.data?.[0];
     if (first?.b64_json) return base64ToBlob(first.b64_json, "image/png");
     if (first?.url) {
-      const image = await fetch(first.url).catch(() => null);
+      const image = await fetchWithTimeout("The image provider", first.url, {}).catch(() => null);
       if (image?.ok) return image.blob();
     }
     throw new Error("The image provider sent back no picture.");

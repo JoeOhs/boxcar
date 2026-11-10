@@ -55,7 +55,7 @@ describe("backup", () => {
     expect(b.tables.settings.map((s) => s.key)).toEqual([]);
     expect(await (await createBackup()).blob.text()).not.toContain("SUPERSECRET");
   });
-  it.fails("BUG-legacy-key-in-backup: an unmigrated plaintext key in settings is written to the backup", async () => {
+  it("F06: an unmigrated plaintext key in settings is kept out of the backup", async () => {
     await setSetting("ai", { provider: "openai", apiKey: SECRET, model: "m" });
     expect(await (await createBackup()).blob.text()).not.toContain("SUPERSECRET");
   });

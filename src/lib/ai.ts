@@ -3,6 +3,7 @@ import { type AgentRole, type AiSettings, type EditStage, type SuggestionKind } 
 import { stageInfo } from "./editing";
 import { OLLAMA_CLOUD_URL, providerNeedsKey, normalizeServerUrl } from "./providers";
 import { getAiSettings } from "./keyVault";
+import { fetchWithTimeout, RequestTimeoutError } from "./request";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
@@ -103,7 +104,7 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
   let response: Response;
   try {
     if (settings.provider === "anthropic") {
-      response = await fetch("https://api.anthropic.com/v1/messages", {
+      response = await fetchWithTimeout("The AI provider", "https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -120,7 +121,7 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
       });
     } else {
       const { url, headers } = openAiStyleEndpoint(settings);
-      response = await fetch(url, {
+      response = await fetchWithTimeout(local ? "Ollama" : "The AI provider", url, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -129,7 +130,8 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
         }),
       });
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof RequestTimeoutError) throw e;
     throw new Error(
       local
         ? `Could not reach Ollama at ${normalizeServerUrl(settings.baseUrl ?? "")}. Check that Ollama is running and that it allows this app (set OLLAMA_ORIGINS).`

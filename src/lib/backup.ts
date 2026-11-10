@@ -14,8 +14,13 @@ const BACKUP_VERSION = 1;
 
 /** Tables that stay on this computer and are never written to, or replaced by, a backup. */
 const LOCAL_ONLY_TABLES = new Set(["apiKeys"]);
-/** Settings that belong to this computer's key vault. */
-const LOCAL_ONLY_SETTINGS = (key: string) => key === "keyVaultKey" || key.startsWith("activeKey:");
+/**
+ * Settings that belong to this computer's key vault. "ai" and "imageAi" are where
+ * older versions kept keys as plain text (see migrateLegacyKeys); if one was never
+ * migrated it must still stay out of the file.
+ */
+const LOCAL_ONLY_SETTINGS = (key: string) =>
+  key === "keyVaultKey" || key.startsWith("activeKey:") || key === "ai" || key === "imageAi";
 
 interface EncodedBlob {
   __blob: string;

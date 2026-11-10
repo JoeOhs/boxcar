@@ -176,7 +176,7 @@ describe("translation", () => {
     mockFetch(openAiReply('["solo"]'));
     await expect(translateChapter(AI, src, tch, { code: "es", name: "Spanish" })).rejects.toThrow(/wrong shape/);
   });
-  it.fails("BUG-translate-js-href: javascript: links from the AI survive sanitizing", async () => {
+  it("F02: javascript: links from the AI are removed by the sanitiser", async () => {
     const { src, tch } = await setup("<p>Click me</p>");
     mockFetch(openAiReply('["Uno","<a href=\\"javascript:alert(1)\\">Haz clic</a>"]'));
     await translateChapter(AI, src, tch, { code: "es", name: "Spanish" });

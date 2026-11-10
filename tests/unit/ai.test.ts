@@ -70,14 +70,18 @@ describe("provider requests", () => {
     await expect(askAi(S("openai", { apiKey: "  " }), "s", [])).rejects.toThrow(/Add your AI key/);
     expect(calls).toHaveLength(0);
   });
-  it.fails("BUG-no-timeout: a request that never answers must time out", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
-    const outcome = await Promise.race([
-      askAi(S("openai"), "s", []).then(() => "done", () => "rejected"),
-      new Promise((r) => setTimeout(() => r("hung"), 3000)),
-    ]);
-    expect(outcome).toBe("rejected");
-  }, 10000);
+  it("F01: a request that never answers times out with a clear message", async () => {
+    vi.useFakeTimers();
+    // Like real fetch, the mock rejects when its signal is aborted.
+    vi.stubGlobal("fetch", vi.fn((_u: string, init: RequestInit) => new Promise((_r, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    })));
+    const pending = askAi(S("openai"), "s", []);
+    const check = expect(pending).rejects.toThrow(/did not answer within 120 seconds/);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await check;
+    vi.useRealTimers();
+  });
 });
 
 describe("requestStageReview / requestFormatPreset consumers", () => {
