@@ -530,50 +530,57 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
  * Delete a manuscript and everything that belongs to it. Deleting a series also
  * deletes its books, and deleting a book also deletes its translations.
  */
-export async function deleteManuscript(manuscriptId: Id): Promise<void> {
-  const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
-  const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
-  for (const childId of [...children, ...translations]) {
-    await deleteManuscript(childId);
-  }
-  return db.transaction(
-    "rw",
-    [
-      db.manuscripts,
-      db.outlineItems,
-      db.storyEntries,
-      db.chapters,
-      db.revisions,
-      db.suggestions,
-      db.agentMessages,
-      db.coverConcepts,
-      db.roadmapCards,
-      db.researchNotes,
-      db.universeNodes,
-    ],
-    async () => {
-      await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
-      await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
-      await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
-      await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
-      await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
-      await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
-      await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.manuscripts.delete(manuscriptId);
-    },
-  );
+export function deleteManuscript(manuscriptId: Id): Promise<void> {
+  return db.transaction("rw", manuscriptTables(), () => removeManuscript(manuscriptId));
 }
 
-/** Delete a workspace and every manuscript in it. */
-export async function deleteWorkspace(workspaceId: Id): Promise<void> {
-  const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
-  for (const id of ids) {
-    await deleteManuscript(id);
-  }
-  await db.workspaces.delete(workspaceId);
+/** Delete a workspace and every manuscript in it. It all goes, or nothing does. */
+export function deleteWorkspace(workspaceId: Id): Promise<void> {
+  return db.transaction("rw", [db.workspaces, ...manuscriptTables()], async () => {
+    const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
+    for (const id of ids) await removeManuscript(id);
+    await db.workspaces.delete(workspaceId);
+  });
+}
+
+/** Every table that holds a manuscript or rows belonging to one. */
+function manuscriptTables() {
+  return [
+    db.manuscripts,
+    db.outlineItems,
+    db.storyEntries,
+    db.chapters,
+    db.revisions,
+    db.suggestions,
+    db.agentMessages,
+    db.coverConcepts,
+    db.roadmapCards,
+    db.researchNotes,
+    db.universeNodes,
+  ];
+}
+
+/**
+ * The body of deleteManuscript. It must run inside a transaction over manuscriptTables(),
+ * so a series, its books and their translations are removed together or not at all.
+ */
+async function removeManuscript(manuscriptId: Id): Promise<void> {
+  const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
+  const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
+  for (const childId of [...children, ...translations]) await removeManuscript(childId);
+  // A book already removed through another path (a series book that is also a translation) is skipped.
+  if (!(await db.manuscripts.get(manuscriptId))) return;
+  await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
+  await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
+  await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
+  await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
+  await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
+  await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
+  await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.manuscripts.delete(manuscriptId);
 }
 
 /** Delete a chapter with its revisions and suggestions, and unlink it from the outline. */

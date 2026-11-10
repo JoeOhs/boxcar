@@ -27,7 +27,7 @@ describe("inception lock (patchManuscript)", () => {
     await patchManuscript(m.id, { status: "drafting" });
     expect((await db.manuscripts.get(m.id))!.status).toBe("editing");
   });
-  it.fails("BUG-lock-undefined: passing undefined explicitly must not clear locked fields", async () => {
+  it("F08: passing undefined explicitly does not clear locked fields", async () => {
     const { m } = await locked();
     await patchManuscript(m.id, { genre: undefined, type: undefined, status: undefined });
     const after = (await db.manuscripts.get(m.id))!;

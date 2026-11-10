@@ -154,3 +154,39 @@ describe("cascade deletes", () => {
     expect((await db.universeNodes.get(a.id))?.links).toEqual([]);
   });
 });
+
+describe("F12: cascade deletes are atomic", () => {
+  it("a failure partway through deleteManuscript leaves every row in place", async () => {
+    const { vi } = await import("vitest");
+    const { m } = await fullBook();
+    const before = await counts();
+    // The translation is removed first; fail on the second coverConcepts lookup (the original book),
+    // after the translation's rows are already gone.
+    let calls = 0;
+    const real = db.coverConcepts.where.bind(db.coverConcepts);
+    vi.spyOn(db.coverConcepts, "where").mockImplementation(((i: string) => {
+      if (++calls === 2) throw new Error("disk full");
+      return real(i);
+    }) as typeof db.coverConcepts.where);
+    await expect(deleteManuscript(m.id)).rejects.toThrow("disk full");
+    vi.restoreAllMocks();
+    expect(await counts()).toEqual(before);
+  });
+  it("a failure while deleting the second book leaves the whole workspace in place", async () => {
+    const { vi } = await import("vitest");
+    const ws = await createWorkspace("S");
+    const { books } = await createSeries(ws, "Saga", 2);
+    await chapter(books[0], "<p>one</p>");
+    await chapter(books[1], "<p>two</p>");
+    const before = await counts();
+    let calls = 0;
+    const real = db.researchNotes.where.bind(db.researchNotes);
+    vi.spyOn(db.researchNotes, "where").mockImplementation(((i: string) => {
+      if (++calls === 2) throw new Error("boom");
+      return real(i);
+    }) as typeof db.researchNotes.where);
+    await expect(deleteWorkspace(ws.id)).rejects.toThrow("boom");
+    vi.restoreAllMocks();
+    expect(await counts()).toEqual(before);
+  });
+});
