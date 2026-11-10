@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettings } from "@/db/schema";
-import { askAi, parseJson, requestFormatPreset, requestStageReview } from "@/lib/ai";
+import { askAi, chapterParts, parseJson, requestFormatPreset, requestStageReview } from "@/lib/ai";
 import { replaceInHtml } from "@/lib/text";
 import { json, mockFetch, openAiReply } from "./helpers";
 
@@ -105,11 +105,34 @@ describe("requestStageReview / requestFormatPreset consumers", () => {
     mockFetch(openAiReply('{"original":"a"}'));
     await expect(requestStageReview(S("openai"), "line", "a", "", "")).rejects.toThrow();
   });
-  it.fails("BUG-silent-truncation: chapters over 24,000 characters are cut without telling the author", async () => {
+  it("F09: a chapter over 24,000 characters is reviewed in parts, and every part is sent", async () => {
     const calls = mockFetch(openAiReply("[]"));
-    const long = "word ".repeat(10000) + "THE-END";
+    const paragraphs = Array.from({ length: 60 }, (_, i) => `P${i} ${"word ".repeat(200)}`);
+    const long = paragraphs.join("\n") + "\nTHE-END";
     await requestStageReview(S("openai"), "proofread", long, "", "");
-    expect(calls[0].body.messages[1].content).toContain("THE-END");
+    expect(calls.length).toBeGreaterThan(1);
+    const sent = calls.map((c) => c.body.messages[1].content as string);
+    expect(sent.some((s) => s.includes("THE-END"))).toBe(true);
+    for (let i = 0; i < 60; i++) expect(sent.filter((s) => s.includes(`P${i} `)).length).toBe(1);
+    expect(sent[0]).toContain(`part 1 of ${calls.length}`);
+  });
+  it("F09: edits from every part are merged; a failing part fails the whole review", async () => {
+    const long = `${"a ".repeat(6000)}\n${"b ".repeat(6000)}`; // two 12,000-char paragraphs = two parts
+    mockFetch(openAiReply('[{"original":"a a","replacement":"A","comment":"1"}]'), openAiReply('[{"original":"b b","replacement":"B","comment":"2"}]'));
+    expect((await requestStageReview(S("openai"), "line", long, "", "")).map((e) => e.comment)).toEqual(["1", "2"]);
+    mockFetch(openAiReply("[]"), json({ error: { message: "Rate limit" } }, 429));
+    await expect(requestStageReview(S("openai"), "line", long, "", "")).rejects.toThrow(/Rate limit/);
+  });
+  it("chapterParts keeps paragraphs whole, splits only oversized ones, and loses no text", () => {
+    expect(chapterParts("short", 100)).toEqual(["short"]);
+    expect(chapterParts("", 100)).toEqual([""]);
+    expect(chapterParts("aaaa\nbbbb\ncccc", 10)).toEqual(["aaaa\nbbbb", "cccc"]);
+    const huge = "One sentence here. ".repeat(20).trim();
+    const parts = chapterParts(huge, 100);
+    expect(parts.every((p) => p.length <= 100)).toBe(true);
+    expect(parts.every((p) => p.trim().endsWith("."))).toBe(true);
+    expect(parts.join(" ").replace(/\s+/g, " ")).toBe(huge);
+    expect(chapterParts("x".repeat(250), 100).map((p) => p.length)).toEqual([100, 100, 50]);
   });
   it("format preset: unknown preset id is an error", async () => {
     mockFetch(openAiReply('{"preset":"nope","reason":"r"}'));
