@@ -1,0 +1,13 @@
+# npm audit report
+
+vite  6.4.4
+Severity: moderate
+Vite: `server.fs.deny` bypassed with queries - https://github.com/advisories/GHSA-8g5g-mxqh-grgj
+fix available via `npm audit fix`
+node_modules/vite
+
+1 moderate severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+EXIT 1
