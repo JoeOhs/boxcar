@@ -1,0 +1,19 @@
+├─ MIT: 178
+├─ Apache-2.0: 13
+├─ ISC: 11
+├─ BSD-2-Clause: 2
+├─ MPL-2.0: 2
+├─ BSD-3-Clause: 2
+├─ MIT-0: 1
+├─ UNLICENSED: 1
+├─ CC-BY-4.0: 1
+├─ (MIT OR GPL-3.0-or-later): 1
+└─ (MIT AND Zlib): 1
+
+├─ MIT: 22
+├─ Apache-2.0: 3
+├─ ISC: 2
+├─ UNLICENSED: 1
+├─ (MIT OR GPL-3.0-or-later): 1
+└─ (MIT AND Zlib): 1
+
