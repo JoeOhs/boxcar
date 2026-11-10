@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Languages, PenLine, Plus, SpellCheck, Sparkles, Undo2 } from "lucide-react";
 import { db, type Chapter, type Id, type Manuscript, type TranslationState } from "@/db/schema";
 import { useAiSettings, aiReachable } from "@/lib/ai";
@@ -10,6 +10,7 @@ import {
   createTranslation,
   proofreadTranslation,
   setChapterApproved,
+  syncTranslationChapters,
   translateChapter,
   type TargetLanguage,
 } from "@/lib/translate";
@@ -326,6 +327,14 @@ function TranslateBody({ source }: { source: Manuscript }) {
   const [chosenId, setChosenId] = useState<Id | null>(null);
   const [creating, setCreating] = useState(false);
   const { selectManuscript } = useApp();
+  const list = translations ?? [];
+  const active = list.find((t) => t.id === chosenId) ?? list[0];
+  const activeId = active?.id;
+
+  // Chapters added to the original since the translation was made are laid out in it too.
+  useEffect(() => {
+    if (activeId) void syncTranslationChapters(activeId);
+  }, [activeId]);
 
   if (source.translationOf) {
     return (
@@ -343,8 +352,6 @@ function TranslateBody({ source }: { source: Manuscript }) {
     );
   }
 
-  const list = translations ?? [];
-  const active = list.find((t) => t.id === chosenId) ?? list[0];
   const showForm = creating || (translations !== undefined && list.length === 0);
 
   return (

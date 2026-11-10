@@ -4,7 +4,7 @@ import { db, type AiSettings, type Chapter, type Manuscript } from "@/db/schema"
 import { buildEpub } from "@/lib/epub";
 import { buildDraftDocx } from "@/lib/docx";
 import { planImport, importManuscript } from "@/lib/importManuscript";
-import { createTranslation, proofreadTranslation, setChapterApproved, translateChapter } from "@/lib/translate";
+import { createTranslation, proofreadTranslation, setChapterApproved, syncTranslationChapters, translateChapter } from "@/lib/translate";
 import { buildAudiobook, speechPieces } from "@/lib/narration";
 import { chapter, json, mockFetch, openAiReply, seedBook } from "./helpers";
 
@@ -108,9 +108,9 @@ describe("import", () => {
     expect(dplan.chapters.some((c) => c.html.includes("First body"))).toBe(true);
     const made = await importManuscript(ws, plan);
     expect((await db.manuscripts.get(made.id))!.status).toBe("drafting");
-    expect(await db.chapters.where("manuscriptId").equals(made.id).count()).toBe(plan.chapters.length); // 5 today: see BUG-epub-reimport
+    expect(await db.chapters.where("manuscriptId").equals(made.id).count()).toBe(4);
   });
-  it.fails("BUG-epub-reimport: re-importing our own EPUB turns the title page into a chapter and mangles headings", async () => {
+  it("F10: re-importing our own EPUB gives back exactly the original chapters", async () => {
     const { m, chapters } = await exportBook();
     const plan = await planImport(file("book.epub", await (await buildEpub(m, "Pen Name", chapters)).arrayBuffer()));
     expect(plan.chapters.map((c) => [c.kind, c.title])).toEqual([["front", "Dedication"], ["chapter", "One"], ["chapter", "Two"], ["back", "About the Author"]]);
@@ -188,10 +188,23 @@ describe("translation", () => {
     await translateChapter(AI, src, tch, { code: "es", name: "Spanish" });
     for (const c of calls) expect(c.body.messages[1].content.length).toBeLessThan(6500);
   });
-  it.fails("BUG-translation-new-chapters: chapters added to the original after the translation is made never appear", async () => {
-    const { m, tr } = await setup("<p>a</p>");
-    await chapter(m, "<p>new</p>", "chapter", "Dos");
-    expect(await db.chapters.where("manuscriptId").equals(tr.id).count()).toBe(2);
+  it("F11: chapters added to the original later are laid out in the translation; translated text is kept", async () => {
+    const { m, tr, tch } = await setup("<p>a</p>");
+    await db.chapters.update(tch.id, { content: "<p>ya traducido</p>", translationState: "approved" });
+    const dos = await chapter(m, "<p>new</p>", "chapter", "Dos");
+    await chapter(m, "<p>scrap</p>", "scrap", "Scrap bin");
+    expect(await syncTranslationChapters(tr.id)).toBe(1);
+    const rows = await db.chapters.where("manuscriptId").equals(tr.id).toArray();
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.sourceChapterId === dos.id)).toMatchObject({ translationState: "pending", content: "", order: dos.order });
+    expect((await db.chapters.get(tch.id))!).toMatchObject({ content: "<p>ya traducido</p>", translationState: "approved" });
+    expect(await syncTranslationChapters(tr.id)).toBe(0); // running it again adds nothing
+  });
+  it("F11: a chapter moved in the original takes its new place in the translation", async () => {
+    const { src, tr, tch } = await setup("<p>a</p>");
+    await db.chapters.update(src.id, { kind: "back", order: 3 });
+    await syncTranslationChapters(tr.id);
+    expect((await db.chapters.get(tch.id))!).toMatchObject({ kind: "back", order: 3 });
   });
 });
 

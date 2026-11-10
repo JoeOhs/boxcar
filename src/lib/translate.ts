@@ -78,6 +78,50 @@ export async function createTranslation(source: Manuscript, target: TargetLangua
   return translation;
 }
 
+/**
+ * Brings a translation's chapter list in line with its original: a chapter added to the
+ * original since gets an empty chapter waiting to be translated, and every chapter takes
+ * the original's section and place. Chapters already translated keep their text.
+ * Returns how many chapters were added.
+ */
+export function syncTranslationChapters(translationId: Id): Promise<number> {
+  return db.transaction("rw", db.manuscripts, db.chapters, async () => {
+    const translation = await db.manuscripts.get(translationId);
+    if (!translation?.translationOf) return 0;
+    const [sources, existing] = await Promise.all([
+      db.chapters.where("manuscriptId").equals(translation.translationOf).toArray(),
+      db.chapters.where("manuscriptId").equals(translationId).toArray(),
+    ]);
+    const bySource = new Map(existing.filter((c) => c.sourceChapterId).map((c) => [c.sourceChapterId!, c]));
+    const now = Date.now();
+    let added = 0;
+    for (const source of sources) {
+      if (source.kind === "scrap") continue;
+      const mine = bySource.get(source.id);
+      if (!mine) {
+        await db.chapters.add({
+          id: newId(),
+          manuscriptId: translationId,
+          kind: source.kind,
+          title: "",
+          content: "",
+          wordCount: 0,
+          status: "draft",
+          order: source.order,
+          sourceChapterId: source.id,
+          translationState: "pending",
+          createdAt: now,
+          updatedAt: now,
+        });
+        added++;
+      } else if (mine.kind !== source.kind || mine.order !== source.order) {
+        await db.chapters.update(mine.id, { kind: source.kind, order: source.order });
+      }
+    }
+    return added;
+  });
+}
+
 /** Inline elements sit inside a paragraph; any other element is a block. */
 const INLINE_TAGS = new Set([
   "A", "ABBR", "B", "BDI", "BDO", "BR", "CITE", "CODE", "DEL", "DFN", "EM", "I", "IMG", "INS",

@@ -1,4 +1,4 @@
-import { db } from "@/db/schema";
+import { db, storyEntryToNode } from "@/db/schema";
 
 /**
  * Save a backup of everything to one file, and open it again.
@@ -176,6 +176,13 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       const rows = (backup.tables[table.name] ?? []).map(decodeRow);
       const usable = table.name === "settings" ? rows.filter((row) => !LOCAL_ONLY_SETTINGS(String(row.key))) : rows;
       if (usable.length > 0) await table.bulkPut(usable);
+    }
+    // A backup made before the Universe (database version 7) has story entries and no
+    // Universe table; give them the same move the database upgrade gave everyone else.
+    // Newer backups are left alone, so a node the author deleted is not brought back.
+    if (!("universeNodes" in backup.tables)) {
+      const entries = await db.storyEntries.toArray();
+      if (entries.length > 0) await db.universeNodes.bulkPut(entries.map(storyEntryToNode));
     }
   });
 }

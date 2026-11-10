@@ -96,10 +96,16 @@ describe("backup", () => {
     await restoreBackup(b);
     expect((await getAiSettings())!.apiKey).toBe(SECRET);
   });
-  it.fails("BUG-old-backup-universe: a pre-v7 backup's storyEntries are restored but never reach the Universe", async () => {
+  it("F07: a pre-v7 backup's storyEntries are moved into the Universe on restore", async () => {
     const b = { app: "boxcar-studio" as const, version: 1, savedAt: 1, tables: { storyEntries: [{ id: "s", manuscriptId: "m", kind: "character", name: "Ana", description: "", createdAt: 1, updatedAt: 1 }] } };
     await restoreBackup(b);
     expect(await db.universeNodes.count()).toBe(1);
+    expect((await db.universeNodes.get("s"))!.name).toBe("Ana");
+  });
+  it("F07: a v7+ backup does not bring back a Universe node the author deleted", async () => {
+    const entry = { id: "s", manuscriptId: "m", kind: "character", name: "Ana", description: "", createdAt: 1, updatedAt: 1 };
+    await restoreBackup({ app: "boxcar-studio", version: 1, savedAt: 1, tables: { storyEntries: [entry], universeNodes: [] } });
+    expect(await db.universeNodes.count()).toBe(0);
   });
   it.fails("BUG-summary-mismatch: summarizeBackup counts settings rows but summarizeCurrent does not", async () => {
     await setSetting("theme", "light");

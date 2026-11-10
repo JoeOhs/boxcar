@@ -478,30 +478,30 @@ export class BoxcarDB extends Dexie {
         universeNodes: "id, manuscriptId, kind, updatedAt",
       })
       .upgrade(async (tx) => {
-        const old = (await tx.table("storyEntries").toArray()) as {
-          id: Id;
-          manuscriptId: Id;
-          kind: string;
-          name: string;
-          description: string;
-          createdAt: Timestamp;
-          updatedAt: Timestamp;
-        }[];
-        const nodes: UniverseNode[] = old.map((entry) => ({
-          id: entry.id,
-          manuscriptId: entry.manuscriptId,
-          kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
-          name: entry.name,
-          summary: entry.description,
-          tags: [],
-          fields: [],
-          links: [],
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt,
-        }));
+        const old = (await tx.table("storyEntries").toArray()) as StoryEntry[];
+        const nodes = old.map(storyEntryToNode);
         if (nodes.length > 0) await tx.table("universeNodes").bulkAdd(nodes);
       });
   }
+}
+
+/**
+ * A story-info entry (database version 6) as a Universe node. Used by the version 7
+ * upgrade and when a backup made before version 7 is opened.
+ */
+export function storyEntryToNode(entry: StoryEntry): UniverseNode {
+  return {
+    id: entry.id,
+    manuscriptId: entry.manuscriptId,
+    kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
+    name: entry.name,
+    summary: entry.description,
+    tags: [],
+    fields: [],
+    links: [],
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  };
 }
 
 export const db = new BoxcarDB();
