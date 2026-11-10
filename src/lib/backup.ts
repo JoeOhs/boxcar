@@ -103,7 +103,7 @@ export async function createBackup(): Promise<{ blob: Blob; filename: string }> 
   return { blob: new Blob([JSON.stringify(backup)], { type: "application/json" }), filename: backupFileName() };
 }
 
-const NOT_A_BACKUP = "That file is not a boxcar backup, so nothing was changed.";
+const NOT_A_BACKUP = "That file is not a Boxcar backup, so nothing was changed.";
 
 /** Reads a file and checks that it is a backup this app made. Throws a plain message when it is not. */
 export async function readBackup(file: File): Promise<BackupFile> {
@@ -118,7 +118,7 @@ export async function readBackup(file: File): Promise<BackupFile> {
     throw new Error(NOT_A_BACKUP);
   }
   if (typeof candidate.version !== "number" || candidate.version > BACKUP_VERSION) {
-    throw new Error("That backup was made by a newer version of boxcar. Update the app, then open it again.");
+    throw new Error("That backup was made by a newer version of Boxcar. Update the app, then open it again.");
   }
   for (const rows of Object.values(candidate.tables)) {
     if (!Array.isArray(rows)) throw new Error(NOT_A_BACKUP);

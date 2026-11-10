@@ -1,7 +1,7 @@
 import Dexie, { type Table } from "dexie";
 
 /**
- * boxcar local database (IndexedDB via Dexie).
+ * Boxcar local database (IndexedDB via Dexie).
  *
  * Ownership chain: Workspace (pen name) -> Manuscript -> Chapter / OutlineItem.
  * IndexedDB does not enforce foreign keys, so the delete helpers at the bottom

@@ -4,19 +4,19 @@ import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
 
 /**
- * The app's name: "boxcar", with "Publishing Studio" underneath. `iconOnly` shows
+ * The app's name: "Boxcar", with "Publishing Studio" underneath. `iconOnly` shows
  * just the book mark, for the collapsed side menu.
  */
 export function Brand({ large = false, iconOnly = false, className }: { large?: boolean; iconOnly?: boolean; className?: string }) {
   if (iconOnly) {
-    return <BookOpen className="size-5" role="img" aria-label="boxcar Publishing Studio" />;
+    return <BookOpen className="size-5" role="img" aria-label="Boxcar Publishing Studio" />;
   }
   const Name = large ? "h1" : "p";
   return (
     <div className={cn("flex items-center gap-2.5", large && "flex-col gap-2 text-center", className)}>
       <BookOpen className={large ? "size-8" : "size-5"} />
       <div className="leading-tight">
-        <Name className={cn("font-serif font-semibold tracking-tight", large ? "text-3xl" : "text-lg")}>boxcar</Name>
+        <Name className={cn("font-serif font-semibold tracking-tight", large ? "text-3xl" : "text-lg")}>Boxcar</Name>
         <p
           className={cn(
             "uppercase text-muted-foreground",

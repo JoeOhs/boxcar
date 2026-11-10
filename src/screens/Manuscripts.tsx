@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowRight, FileUp, Library, Plus, Trash2, UserRound } from "lucide-react";
+import { ArrowRight, FileUp, Library, Plus, Trash2, UserRound, X } from "lucide-react";
 import {
   db,
   deleteManuscript,
@@ -21,7 +21,6 @@ import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { BlendPicker, GenrePicker } from "@/components/GenrePicker";
-import { CoverMockup } from "@/components/CoverMockup";
 import { PenNamePicker } from "@/components/PenNamePicker";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Button } from "@/components/ui/button";
@@ -477,8 +476,8 @@ function ManuscriptOptions({ manuscript, words, seriesTitle }: { manuscript: Man
   );
 }
 
-/** One book standing on the shelf as its spine. Clicking it pulls the book off the shelf. */
-function Spine({
+/** One book lying flat in the stack: a plain coloured bar with its title. Thicker books are taller bars. */
+function StackedBook({
   manuscript,
   words,
   selected,
@@ -495,105 +494,51 @@ function Spine({
   let hash = 7;
   for (const c of manuscript.id) hash = (hash * 31 + c.charCodeAt(0)) | 0;
   const seed = Math.abs(hash);
-  const height = 158 + (seed % 5) * 9;
-  const width = Math.max(30, Math.min(58, 28 + Math.round(words / 2400)));
-  const lean = seed % 7 === 3;
-  const tilt = lean ? (seed % 2 === 0 ? -1.2 : 1.1) : 0;
+  const thickness = Math.max(28, Math.min(44, 26 + Math.round(words / 6000)));
+  // Books in a real stack are not all the same length or perfectly aligned.
+  const length = 88 + (seed % 4) * 4;
+  const offset = (seed % 5) * 2;
+  const title = manuscript.title || "Untitled";
   return (
     <button
       type="button"
       onClick={onClick}
-      title={manuscript.title}
-      aria-label={`${manuscript.title}${brought ? " (in the workspace)" : ""}`}
+      title={title}
+      aria-label={`${title}${brought ? " (in the workspace)" : ""}`}
       aria-pressed={selected}
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-t-[2px] border border-black/10 transition-all duration-200",
-        selected ? "z-10 -translate-y-2 scale-[1.04] shadow-[0_10px_24px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)] ring-2 ring-white/60" : "hover:-translate-y-3 hover:shadow-[0_10px_20px_rgba(0,0,0,0.45)]",
+        "flex items-center gap-2 rounded-[3px] px-3 text-left transition-[transform,box-shadow] duration-200 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        selected ? "translate-x-3 shadow-md ring-2 ring-ring" : "hover:translate-x-1.5",
       )}
-      style={{
-        height,
-        width,
-        transform: selected ? undefined : tilt ? `rotate(${tilt}deg)` : undefined,
-        background: `linear-gradient(90deg, rgba(0,0,0,0.42), rgba(255,255,255,0.18) 12%, rgba(255,255,255,0.06) 22%, rgba(0,0,0,0) 34%, rgba(0,0,0,0) 66%, rgba(0,0,0,0.32) 82%, rgba(0,0,0,0.45)), ${look.background}`,
-        color: look.ink,
-        boxShadow: selected ? undefined : "0 6px 14px rgba(0,0,0,0.42), inset 1px 0 0 rgba(255,255,255,0.35), inset -1px 0 0 rgba(0,0,0,0.25)",
-      }}
+      style={{ height: thickness, width: `${length}%`, marginLeft: offset, background: look.background, color: look.ink }}
     >
-      {/* spine highlight */}
-      <span className="pointer-events-none absolute inset-y-0 left-[3px] w-[2px] bg-white/35" aria-hidden="true" />
-      <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-black/25" aria-hidden="true" />
-      <span className="absolute inset-x-0 top-1.5 h-[3px] opacity-90" style={{ background: look.accent }} aria-hidden="true" />
-      <span className="absolute inset-x-[7%] top-[13px] h-px bg-white/30" aria-hidden="true" />
-      {seed % 3 === 0 ? <span className="absolute inset-x-[6%] top-5 h-px opacity-70" style={{ background: look.accent }} aria-hidden="true" /> : null}
-      <span
-        className="relative max-h-[86%] truncate px-1 font-semibold tracking-[0.03em] drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]"
-        style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontFamily: look.fontFamily, fontSize: width > 42 ? 12.5 : 11, lineHeight: 1.15 }}
-      >
-        {manuscript.title || "Untitled"}
+      <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ fontFamily: look.fontFamily }}>
+        {title}
       </span>
-      <span className="absolute inset-x-0 bottom-2 h-[3px] opacity-90" style={{ background: look.accent }} aria-hidden="true" />
-      <span className="absolute inset-x-[7%] bottom-[11px] h-px bg-white/25" aria-hidden="true" />
-      {brought ? (
-        <span className="absolute bottom-[7px] left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.9)] ring-1 ring-black/30" title="In the workspace" />
-      ) : null}
-      {selected ? <span className="absolute inset-0 rounded-t-[2px] ring-1 ring-white/25" aria-hidden="true" /> : null}
+      {brought ? <span className="size-1.5 shrink-0 rounded-full bg-current opacity-80" title="In the workspace" /> : null}
     </button>
   );
 }
 
-/** A wooden shelf: the books stand on the plank, with its pale top edge, wood grain and dark front face beneath. */
-function Shelf({ label, children }: { label?: string; children?: ReactNode }) {
+/** A stack of books under a divider: the standalone books, or one series in volume order. */
+function Stack({ label, children }: { label: string; children?: ReactNode }) {
   return (
-    <div className="relative" aria-label={label}>
-      {label ? (
-        <div className="mb-2 flex items-center gap-2 px-1">
-          <span className="h-px flex-1 bg-[#e9dcc4]/20" aria-hidden="true" />
-          <p className="shrink-0 rounded bg-[#1a1208]/55 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f5e6c8] shadow-sm backdrop-blur-sm">{label}</p>
-          <span className="h-px flex-1 bg-[#e9dcc4]/20" aria-hidden="true" />
-        </div>
-      ) : null}
-      {/* wall shadow behind the row */}
-      <div className="absolute inset-x-0 bottom-[22px] h-10 bg-gradient-to-b from-transparent to-black/25" aria-hidden="true" />
-      <div className="relative flex min-h-44 flex-wrap items-end gap-x-[3px] gap-y-2 px-6 pb-2">
-        {children}
-        {children && (Array.isArray(children) ? children.length === 0 : false) ? (
-          <p className="py-10 text-sm italic text-[#e9dcc4]/55">No books on this shelf yet.</p>
-        ) : null}
+    <section aria-label={label} className="space-y-2">
+      <div className="flex items-center gap-2">
+        <p className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
       </div>
-      {/* shelf plank with wood grain */}
-      <div className="relative h-[14px]">
-        <div
-          className="absolute inset-0 rounded-[2px] border border-black/20 shadow-[0_10px_18px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.35)]"
-          style={{
-            background: `linear-gradient(to bottom, #d4ac74 0%, #b78a4e 22%, #9c6d34 55%, #7a4f1f 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.07) 0 1px, transparent 1px 7px, rgba(255,255,255,0.06) 7px 8px)`,
-            backgroundBlendMode: "multiply",
-          }}
-          aria-hidden="true"
-        />
-        {/* top highlight */}
-        <div className="absolute inset-x-0 top-0 h-[3px] rounded-t-[2px] bg-gradient-to-b from-white/55 to-transparent" aria-hidden="true" />
-        {/* front lip shadow */}
-        <div className="absolute inset-x-0 bottom-0 h-[5px] rounded-b-[2px] bg-gradient-to-b from-black/10 to-black/30" aria-hidden="true" />
-      </div>
-      {/* deep shadow under shelf */}
-      <div className="h-5 bg-gradient-to-b from-black/35 via-black/10 to-transparent" aria-hidden="true" />
-    </div>
+      <div className="flex flex-col gap-[3px]">{children}</div>
+    </section>
   );
 }
 
-/** The empty bookshelf: the options sit in a translucent menu at its centre, shelves still visible behind. */
+/** The empty bookshelf: the options sit at its centre. */
 function EmptyBookshelf({ onNew, onImport }: { onNew: () => void; onImport: () => void }) {
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_60%_at_50%_-10%,rgba(255,248,220,0.22),transparent_55%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4e3a24_62%,#3d2e1c_100%)]" aria-hidden="true" />
-      <div className="absolute inset-0 opacity-[0.035]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 22px, rgba(0,0,0,0.5) 22px 23px)" }} aria-hidden="true" />
-      <div className="relative space-y-7 px-3 py-5">
-        <Shelf label="Books" />
-        <Shelf />
-        <Shelf />
-      </div>
       <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-8">
-        <div className="w-full max-w-md space-y-4 rounded-2xl border border-white/15 bg-card/90 p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.5),0_2px_10px_rgba(0,0,0,0.3)] backdrop-blur-xl">
+        <div className="w-full max-w-md space-y-4 rounded-xl border bg-card p-7 text-center">
           <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
             <Library className="size-5" />
           </div>
@@ -641,11 +586,10 @@ function ImportDialog({
   );
 }
 
-/** Shown in the compact card below the bookshelf: cover on top, then the title editor and options. */
+/** Shown beside the stack when a book is chosen: the title editor and options. */
 function BookPresentationInner({ manuscript, words, seriesTitle }: { manuscript: Manuscript; words: number; seriesTitle?: string }) {
   const { workspace, manuscript: brought, selectManuscript, navigate } = useApp();
   const isBrought = brought?.id === manuscript.id;
-  const genre = genreById(manuscript.genre);
 
   async function remove() {
     if (!window.confirm(`Delete "${manuscript.title}" with all its chapters and outline? This cannot be undone.`)) return;
@@ -654,12 +598,6 @@ function BookPresentationInner({ manuscript, words, seriesTitle }: { manuscript:
 
   return (
     <div className="flex w-full flex-col gap-3">
-      <div className="flex justify-center">
-        <div className="relative shrink-0">
-          <div className="absolute -bottom-2 left-3 right-3 h-4 rounded-full bg-black/20 blur-[6px]" aria-hidden="true" />
-          <CoverMockup title={manuscript.title} author={workspace?.name ?? ""} genre={genre} image={manuscript.cover} size="sm" />
-        </div>
-      </div>
       <div className="space-y-2">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isBrought ? "In the workspace" : "On the shelf"}</p>
         <TitleEditor key={manuscript.id} manuscript={manuscript} />
@@ -718,8 +656,8 @@ export function Manuscripts() {
   const series = [...(seriesRows ?? [])].sort((a, b) => a.title.localeCompare(b.title));
   const standalone = manuscripts.filter((m) => !m.seriesId);
 
-  // The book chosen on the shelf, or the one in the workspace. Nothing is chosen for you.
-  const chosen = manuscripts.find((m) => m.id === selectedId) ?? manuscript ?? null;
+  // The book taken off the shelf. Nothing is chosen for you: it is held up over the shelves until put back.
+  const chosen = manuscripts.find((m) => m.id === selectedId) ?? null;
   const shown: Pane = pane === "manuscript" && needsPenName && !hasBooks ? "new" : pane;
   const cancel = hasBooks ? () => setPane("manuscript") : null;
 
@@ -736,49 +674,52 @@ export function Manuscripts() {
     setPane("manuscript");
   }
 
-  function shelfArea(selectedOverlay?: ReactNode) {
+  /** The stack of books down the left; the chosen book's card opens in the space to its right. */
+  function shelfArea(card?: ReactNode) {
+    const spine = (m: Manuscript) => (
+      <StackedBook
+        key={m.id}
+        manuscript={m}
+        words={wordCounts?.[m.id] ?? 0}
+        selected={chosen?.id === m.id}
+        brought={manuscript?.id === m.id}
+        onClick={() => (chosen?.id === m.id ? setSelectedId(null) : pick(m.id))}
+      />
+    );
     return (
-      <div className="relative min-h-0 flex-1 overflow-y-auto px-3 pb-10 pt-6">
-        {/* warm bookcase wall with vignette light */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_65%_at_50%_-8%,rgba(255,244,214,0.20),transparent_58%),linear-gradient(to_bottom,#6d5232_0%,#60492d_18%,#574129_36%,#4f3c26_62%,#3d2e1c_100%)]" aria-hidden="true" />
-        <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent 0 24px, rgba(0,0,0,0.7) 24px 25px)" }} aria-hidden="true" />
-        <div className="relative space-y-8">
-          {standalone.length > 0 ? (
-            <Shelf label="Books">
-              {standalone.map((m) => (
-                <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
-              ))}
-            </Shelf>
-          ) : hasBooks ? null : (
-            <Shelf label="Books">
-              <p className="px-2 py-8 text-sm italic text-[#f5e6c8]/60">No standalone books yet — your imported or new books will stand here.</p>
-            </Shelf>
-          )}
+      <div className="flex min-h-0 flex-1">
+        <aside className="w-72 shrink-0 space-y-6 overflow-y-auto border-r px-4 py-5" aria-label="Bookshelf">
+          {standalone.length > 0 ? <Stack label="Books">{standalone.map(spine)}</Stack> : null}
           {series.map((s) => {
             const books = manuscripts
               .filter((m) => m.seriesId === s.id)
               .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
             if (books.length === 0) return null;
             return (
-              <Shelf key={s.id} label={`${s.title} — ${books.length} ${books.length === 1 ? "book" : "books"}`}>
-                {books.map((m) => (
-                  <Spine key={m.id} manuscript={m} words={wordCounts?.[m.id] ?? 0} selected={chosen?.id === m.id} brought={manuscript?.id === m.id} onClick={() => pick(m.id)} />
-                ))}
-              </Shelf>
+              <Stack key={s.id} label={`${s.title} · ${books.length}`}>
+                {books.map(spine)}
+              </Stack>
             );
           })}
-          {hasBooks && standalone.length === 0 && series.length === 0 ? (
-            <p className="px-6 text-sm text-[#f5e6c8]/60">Your books will appear on the shelves above.</p>
-          ) : null}
+        </aside>
+        <div className="min-w-0 flex-1 overflow-y-auto p-6" onKeyDown={(e) => e.key === "Escape" && setSelectedId(null)}>
+          {card ? (
+            <div key={chosen?.id} className="card-arrive relative flex max-w-xl flex-col gap-3 rounded-xl border bg-card p-4">
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Close this book"
+                title="Close"
+              >
+                <X className="size-4" />
+              </button>
+              {card}
+            </div>
+          ) : (
+            <p className="pt-2 text-sm text-muted-foreground">Choose a book from the stack to see its details.</p>
+          )}
         </div>
-        {selectedOverlay ? (
-          <div
-            key="bookshelf-selected"
-            className="cover-present relative z-10 mt-6 flex max-w-xl flex-col gap-3 rounded-xl border border-white/15 bg-card/85 p-4 shadow-[0_12px_32px_rgba(0,0,0,0.40),0_2px_10px_rgba(0,0,0,0.25)] backdrop-blur-md"
-          >
-            {selectedOverlay}
-          </div>
-        ) : null}
       </div>
     );
   }
