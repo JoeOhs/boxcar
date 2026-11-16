@@ -308,3 +308,22 @@ Observations from fixing this codebase that may be useful for the generator rath
 8. **Silent caps.** `slice(0, N)` on user text appeared in several prompts (24,000 per chapter, 30,000 for the whole book, 240 per chapter in the developmental summary). Each either needs batching or must be visible to the author. One of them (F28) changes what a feature actually does.
 9. **Docs drifted from the code.** `decisions.md` still describes a backend with sign-in; `data-model.md` lists two key providers instead of five and omits four tables; `integration.md` points to `ganger/reports/coverage.json`, which doesn't exist; and the developmental review is described as reading "the whole book" (F28). AGENTS.md says `ganger/brain/` must not be edited by the project, so these need correcting upstream.
 10. **The test script will now run after every round.** The `BUG-*` tests are written with `it.fails`, so they pass while their bug exists and fail once it is fixed. If a Ganger round fixes one of the six remaining bugs, that test turning red is expected, and the right repair is to switch it to `it`, not to change the code back. This is finding F13. We recommend adding a line to AGENTS.md saying so.
+
+## 10. Status after Phase 4 (branch `JoeOhs/audit-fixes-merge`, 2026-11-16)
+
+`fix/high-findings` was merged with release v1.0.3, then the open findings were worked through. No `it.fails` tests remain: every defect the audit reproduced is fixed. Unit tests: 146/146. E2E: 4/4. `npm audit`: 0 vulnerabilities.
+
+| Finding | Outcome |
+| --- | --- |
+| F13 | Done. AGENTS.md explains the `BUG-*` / `it.fails` convention. |
+| F14 | Done, as the author chose: a Storage card in Settings shows each book's revisions, chats and cover concepts, with confirmed clean-up buttons. Nothing is deleted automatically. |
+| F15 | Done, as the author chose: translated chapters are kept, unlinked and flagged "Original deleted". |
+| F16–F20 | Fixed; their `BUG-*` tests are now ordinary tests named after the findings. |
+| F21 | Fixed: right-to-left EPUBs (dir and page-progression-direction) for Arabic, Hebrew, Persian, Urdu and others. |
+| F22 | Fixed: Vite 6.4.6, Playwright 1.65, Vitest 5. |
+| F23 | Fixed: screens load on demand (main bundle 733 kB to 400 kB) and are preloaded in the background so they still work offline. |
+| F24 | Not an app defect. The warning is Playwright's trace recorder being blocked by the preview's sandbox; it disappears with `--trace=off`. The sandbox stays. |
+| F25 | Done: `allowScripts` committed; `engines.node` is `>=22.12` (Vitest 5's minimum). |
+| F26 | Done: brain files corrected by amendment; data-model.md and integration.md updated. |
+| F27 | **Correction: the table is not dead.** The Story info panel on the Universe screen's Outline tab still reads and writes `storyEntries`, so clearing it would delete authors' notes. The real issue is that characters, locations and situations can be recorded in two places (Story info and the Universe) that do not sync. Left open for the author to decide. |
+| F28 | Done, as the author chose: developmental editors read AI chapter summaries (author-written briefs for fiction and non-fiction, cached per chapter); line, copy and proofreading passes and the "Ask the Editor" chat read every word. |
