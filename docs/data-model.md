@@ -48,5 +48,5 @@ One item in a manuscript’s research repository (database version 4): a note, a
 ## RoadmapCard (table `roadmapCards`)
 One task card on the Roadmap board (database version 4). Columns are the manuscript stages. A card may name the screen that does the task, may be optional (it does not hold up its stage), and may stand for an editing pass (`editStage`). Cards for editing passes are not ticked by hand: they follow `Manuscript.editWorkflow`, which is the single record of editing progress.
 
-## StoryEntry (table `storyEntries`, retired)
-The Outline’s story info from database version 6 (characters, locations, situations). Since version 7 it is no longer used: its rows were moved into `UniverseNode`. The table still exists so old databases and backups can be read, and `deleteManuscript` still clears it (audit finding F27).
+## StoryEntry (table `storyEntries`)
+Story info for a book: characters, locations and situations, each with a name and a description (database version 6). It is still in use: the Story info panel on the Universe screen’s Outline tab reads and writes it, and the outliner AI is given these entries as context. When database version 7 created the Universe, every story entry was copied into a `UniverseNode`; entries added since then live only here, so the same kind of fact can be recorded in two places (see AUDIT_REPORT.md F27, which wrongly calls this table dead). Restoring a backup made before version 7 copies its entries into the Universe the same way.
