@@ -1,12 +1,14 @@
-import { db, newId, type AiSettings, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
+import { db, newId, type AiSettings, type Chapter, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
 import { askAi, parseJson } from "./ai";
+import { ensureSummaries, hasFreshSummary } from "./chapterSummary";
 import { chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { genreById, genreContext } from "./genres";
 import { htmlToText } from "./text";
 
 /**
- * The developmental pass. Four specialist editors read the whole book, each with
- * its own expertise, and return notes on the big picture. The notes are saved as
+ * The developmental pass. Four specialist editors read the whole book in brief (an
+ * AI summary of every chapter, made from its full text), each with its own
+ * expertise, and return notes on the big picture. The notes are saved as
  * suggestions, so the author can read them in the Edit screen, address them and
  * dismiss them. Every editor runs on the model chosen for the developmental pass.
  */
@@ -68,17 +70,24 @@ function outlineLines(items: OutlineItem[]): string[] {
   return lines;
 }
 
+/** What the developmental editors read for one chapter: its AI summary, made from every word of it. */
+function chapterBrief(chapter: Chapter): string {
+  if (!htmlToText(chapter.content).trim()) return "(empty)";
+  if (hasFreshSummary(chapter)) return chapter.devSummary!.text.replace(/\s+/g, " ");
+  return "(not summarised yet: run the developmental pass to summarise it)";
+}
+
 /**
  * The whole book in brief: the title and genre, the outline, and every chapter with
- * its number in square brackets and the start of its text. Notes refer to a chapter
- * by that number.
+ * its number in square brackets and its AI summary (see chapterSummary.ts). Notes
+ * refer to a chapter by that number. Pass `chapters` to use summaries just written.
  */
-export async function bigPicture(manuscript: Manuscript): Promise<string> {
-  const [items, chapters] = await Promise.all([
+export async function bigPicture(manuscript: Manuscript, chapters?: Chapter[]): Promise<string> {
+  const [items, all] = await Promise.all([
     db.outlineItems.where("manuscriptId").equals(manuscript.id).toArray(),
-    db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
+    chapters ?? db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
   ]);
-  const sorted = sortChapters(chapters.filter((chapter) => chapter.kind !== "scrap"));
+  const sorted = sortChapters(all.filter((chapter) => chapter.kind !== "scrap"));
   const numbers = numberChapters(sorted);
   const parts = [`Title: ${manuscript.title}`];
   const genre = genreContext(genreById(manuscript.genre));
@@ -89,14 +98,24 @@ export async function bigPicture(manuscript: Manuscript): Promise<string> {
   parts.push(
     `Chapters:\n${sorted
       .map(
-        (c, i) =>
-          `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${htmlToText(c.content)
-            .slice(0, 240)
-            .replace(/\s+/g, " ")}`,
+        (c, i) => `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${chapterBrief(c)}`,
       )
       .join("\n")}`,
   );
   return parts.join("\n\n");
+}
+
+/** bigPicture, after summarising any chapter that is new or changed. Used by the per-chapter developmental review. */
+export async function summarisedBigPicture(
+  manuscript: Manuscript,
+  settings: AiSettings,
+  onProgress?: (message: string) => void,
+): Promise<string> {
+  const loaded = (await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((c) => c.kind !== "scrap");
+  const chapters = await ensureSummaries(settings, loaded, (done, total, chapter) =>
+    onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
+  );
+  return bigPicture(manuscript, chapters);
 }
 
 export interface DevelopmentalResult {
@@ -108,19 +127,31 @@ export interface DevelopmentalResult {
 
 /**
  * Runs the four developmental editors over the whole book, one after another, and
- * saves their notes. If any editor fails, nothing is saved and the error is thrown.
+ * saves their notes. First every chapter is summarised from its full text (only
+ * chapters that are new or changed since their last summary), so the editors see
+ * the whole book in brief. If any editor fails, no notes are saved and the error
+ * is thrown; summaries already written are kept for next time.
  */
-export async function runDevelopmentalReview(manuscript: Manuscript, settings: AiSettings): Promise<DevelopmentalResult> {
-  const chapters = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
-  if (!chapters.some((c) => htmlToText(c.content).trim())) {
+export async function runDevelopmentalReview(
+  manuscript: Manuscript,
+  settings: AiSettings,
+  onProgress?: (message: string) => void,
+): Promise<DevelopmentalResult> {
+  const loaded = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
+  if (!loaded.some((c) => htmlToText(c.content).trim())) {
     throw new Error("Write at least one chapter before the developmental pass.");
   }
-  const context = (await bigPicture(manuscript)).slice(0, 30000);
+  const chapters = await ensureSummaries(settings, loaded, (done, total, chapter) =>
+    onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
+  );
+  // No cap: summaries keep the book small, and cutting it would hide chapters from the editors.
+  const context = await bigPicture(manuscript, chapters);
   const found: Suggestion[] = [];
   const perAgent: DevelopmentalResult["perAgent"] = [];
   const now = Date.now();
 
   for (const agent of DEVELOPMENTAL_AGENTS) {
+    onProgress?.(`The ${agent.name.toLowerCase()} is reading the book…`);
     const prompt =
       `${agent.task}\n\n` +
       `Reply with ONLY a JSON array (no prose, no code fences) of at most 6 objects with the keys "chapter" and "comment". ` +

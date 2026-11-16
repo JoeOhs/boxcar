@@ -1,0 +1,107 @@
+import { describe, expect, it } from "vitest";
+import { db, type AiSettings } from "@/db/schema";
+import { CHAPTER_PART_CHARACTERS, requestStageReview } from "@/lib/ai";
+import { runDevelopmentalReview } from "@/lib/developmentalReview";
+import { saveChapter } from "@/lib/store";
+import { chapter, mockFetch, openAiReply, seedBook, type Call } from "./helpers";
+
+// F28: the developmental editors read an AI summary of every chapter (made from its
+// full text); the line, copy and proofreading passes read every word.
+
+const S: AiSettings = { provider: "openai", apiKey: "test-key-0000", model: "m-1" };
+
+/** The user prompt of an OpenAI-style call. */
+const promptOf = (c: Call): string => c.body.messages[c.body.messages.length - 1].content;
+const isSummaryCall = (c: Call) => promptOf(c).startsWith("Summarise this chapter");
+
+/** Answers summary requests with "SUMMARY OF <chapter title>" and editor requests with no notes. */
+function fakeAi() {
+  return mockFetch((call) => {
+    const title = /CHAPTER "([^"]*)"/.exec(promptOf(call))?.[1];
+    return openAiReply(isSummaryCall(call) ? `SUMMARY OF ${title}` : "[]");
+  });
+}
+
+const filler = (words: number) => Array.from({ length: words }, (_, i) => `word${i}`).join(" ");
+
+describe("developmental pass (F28)", () => {
+  it("summarises every word of each chapter and gives the editors those summaries", async () => {
+    const { m } = await seedBook();
+    await chapter(m, `<p>${filler(400)} LATE-PLOT-TWIST</p>`, "chapter", "Alpha");
+    await chapter(m, "<p>Short one.</p>", "chapter", "Beta");
+    const calls = fakeAi();
+
+    await runDevelopmentalReview(m, S);
+
+    const summaries = calls.filter(isSummaryCall);
+    expect(summaries).toHaveLength(2);
+    // The summariser saw the end of the chapter, which the old 240-character excerpt never reached.
+    expect(summaries.some((c) => promptOf(c).includes("LATE-PLOT-TWIST"))).toBe(true);
+
+    const editors = calls.filter((c) => !isSummaryCall(c));
+    expect(editors).toHaveLength(4);
+    for (const call of editors) {
+      expect(promptOf(call)).toContain("SUMMARY OF Alpha");
+      expect(promptOf(call)).toContain("SUMMARY OF Beta");
+    }
+  });
+
+  it("reuses saved summaries and only re-summarises chapters whose text changed", async () => {
+    const { m } = await seedBook();
+    const a = await chapter(m, "<p>First chapter.</p>", "chapter", "Alpha");
+    await chapter(m, "<p>Second chapter.</p>", "chapter", "Beta");
+
+    fakeAi();
+    await runDevelopmentalReview(m, S);
+    expect((await db.chapters.get(a.id))!.devSummary?.text).toBe("SUMMARY OF Alpha");
+
+    let calls = fakeAi();
+    await runDevelopmentalReview(m, S);
+    expect(calls.filter(isSummaryCall)).toHaveLength(0);
+
+    await saveChapter(a.id, { content: "<p>First chapter, rewritten.</p>" });
+    calls = fakeAi();
+    await runDevelopmentalReview(m, S);
+    const redone = calls.filter(isSummaryCall);
+    expect(redone).toHaveLength(1);
+    expect(promptOf(redone[0])).toContain("rewritten");
+  });
+
+  it("summarises a chapter longer than one request in parts, so nothing is left unread", async () => {
+    const { m } = await seedBook();
+    const long = `<p>${filler(2500)}</p><p>${filler(2500)}</p><p>${filler(2500)} THE-LAST-LINE</p>`;
+    await chapter(m, long, "chapter", "Epic");
+    const calls = fakeAi();
+
+    await runDevelopmentalReview(m, S);
+
+    const parts = calls.filter(isSummaryCall);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(promptOf(parts[parts.length - 1])).toContain("THE-LAST-LINE");
+  });
+
+  it("keeps summaries already written when a later request fails", async () => {
+    const { m } = await seedBook();
+    const a = await chapter(m, "<p>One.</p>", "chapter", "Alpha");
+    await chapter(m, "<p>Two.</p>", "chapter", "Beta");
+    mockFetch(openAiReply("SUMMARY OF Alpha"), new TypeError("Failed to fetch"));
+
+    await expect(runDevelopmentalReview(m, S)).rejects.toThrow();
+    expect((await db.chapters.get(a.id))!.devSummary?.text).toBe("SUMMARY OF Alpha");
+    expect(await db.suggestions.count()).toBe(0);
+  });
+});
+
+describe("line, copy and proofreading passes read every word", () => {
+  it.each(["line", "copy", "proofread"] as const)("%s pass sends the whole of a long chapter", async (stage) => {
+    const text = `${"x".repeat(CHAPTER_PART_CHARACTERS - 10)}\n${filler(3000)} FINAL-SENTENCE`;
+    const calls = mockFetch(openAiReply("[]"));
+
+    await requestStageReview(S, stage, text, "", "");
+
+    const sent = calls.map(promptOf).join("\n");
+    expect(calls.length).toBeGreaterThan(1);
+    expect(sent).toContain("FINAL-SENTENCE");
+    expect(sent).toContain("word2999");
+  });
+});

@@ -29,7 +29,7 @@ import {
 } from "@/lib/editing";
 import { buildDraftDocx } from "@/lib/docx";
 import { downloadBlob, fileSafeName } from "@/lib/download";
-import { bigPicture, DEVELOPMENTAL_AGENTS, runDevelopmentalReview } from "@/lib/developmentalReview";
+import { DEVELOPMENTAL_AGENTS, runDevelopmentalReview, summarisedBigPicture } from "@/lib/developmentalReview";
 import { exportStageReport, REPORT_TITLE } from "@/lib/reports";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
@@ -135,7 +135,9 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
     setBusy(true);
     setNote(null);
     try {
-      const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"));
+      const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"), (text) =>
+        setNote({ ok: true, text }),
+      );
       await completeStage(manuscript, "developmental");
       // The report takes over the space as soon as the pass is finished.
       onDevelopmentalComplete();
@@ -498,7 +500,9 @@ function SuggestionsPanel({
     setBusy(true);
     setMessage(null);
     try {
-      const context = notes ? await bigPicture(manuscript) : "";
+      const context = notes
+        ? await summarisedBigPicture(manuscript, settingsForStage(ai, models, "developmental"), (text) => setMessage({ ok: true, text }))
+        : "";
       const style = styleGuideAgent(workflowOf(manuscript).styleGuide);
       const edits = await requestStageReview(
         settingsForStage(ai, models, stage),
@@ -975,7 +979,7 @@ function ChapterReview({
               persona={stage === "copy" ? styleGuideAgent(workflowOf(manuscript).styleGuide).persona : info.persona}
               model={ai && models ? modelForStage(ai.provider, models, stage, ai.model) : undefined}
               getContext={() =>
-                `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}":\n${htmlToText(chapter.content).slice(0, 12000)}`
+                `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}" (every word):\n${htmlToText(chapter.content)}`
               }
               quickPrompts={QUICK_PROMPTS[stage]}
               initialText={initialQuestion ? `About this developmental flag: "${initialQuestion}"\n\n` : undefined}

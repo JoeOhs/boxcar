@@ -244,8 +244,21 @@ export interface Chapter {
   sourceChapterId?: Id;
   /** For a translated chapter: where it is in its review. */
   translationState?: TranslationState;
+  /**
+   * The AI-written summary the developmental editors read in place of the full text.
+   * Made from every word of the chapter; reused until the chapter's text changes.
+   */
+  devSummary?: ChapterSummary;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/** A chapter summary for the developmental editors, tied to the exact text it was made from. */
+export interface ChapterSummary {
+  text: string;
+  /** Fingerprint of the chapter text the summary was made from; a different fingerprint means the summary is stale. */
+  sourceHash: string;
+  createdAt: Timestamp;
 }
 
 /** A saved copy of a chapter's text so edits can be compared and restored. */

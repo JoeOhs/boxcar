@@ -238,7 +238,8 @@ export async function requestStageReview(
     stage === "copy"
       ? `\n\nStyle guide to follow: ${styleGuide.trim() || "none was chosen, so use the standard conventions of the book's language and keep everything consistent."}`
       : "";
-  const context = bookContext.trim() ? `\n\nTHE BOOK SO FAR:\n${bookContext.slice(0, 8000)}` : "";
+  // Only the developmental pass sends book context: chapter summaries, small enough to send whole.
+  const context = bookContext.trim() ? `\n\nTHE BOOK SO FAR (a summary of every chapter):\n${bookContext}` : "";
   const format =
     info.output === "notes"
       ? `Reply with ONLY a JSON array (no prose, no code fences) of at most 8 objects with the keys "passage" and "comment". ` +
