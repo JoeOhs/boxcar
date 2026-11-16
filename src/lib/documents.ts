@@ -26,8 +26,7 @@ export interface ReadDocument {
   parts?: { title: string; blocks: DocBlock[] }[];
 }
 
-export const IMPORT_EXTENSIONS = [".txt", ".md", ".markdown", ".html", ".htm", ".docx", ".epub"];
-export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.join(",");
+export { IMPORT_ACCEPT, IMPORT_EXTENSIONS } from "./importFormats";
 
 export function extensionOf(name: string): string {
   const at = name.lastIndexOf(".");
