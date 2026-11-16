@@ -60,12 +60,18 @@ describe("EPUB export", () => {
     expect(text).not.toContain("SCRAPPED");
     expect(text).toContain("👋");
   });
-  it("RTL language: no dir / page-progression-direction written (finding)", async () => {
+  it.each([
+    ["ar", true],
+    ["he-IL", true],
+    ["en", false],
+  ])("F21: language %s sets right-to-left reading: %s", async (language, rtl) => {
     const { m, chapters } = await exportBook();
-    const zip = await JSZip.loadAsync(await (await buildEpub({ ...m, language: "ar" }, "A", chapters)).arrayBuffer());
+    const zip = await JSZip.loadAsync(await (await buildEpub({ ...m, language }, "A", chapters)).arrayBuffer());
     const opf = Object.keys(zip.files).find((n) => n.endsWith(".opf"))!;
     const s = await zip.file(opf)!.async("string");
-    expect(s.includes("page-progression-direction")).toBe(false); // documents current (missing) behaviour
+    expect(s.includes('page-progression-direction="rtl"')).toBe(rtl);
+    const page = await zip.file("OEBPS/titlepage.xhtml")!.async("string");
+    expect(page.includes('dir="rtl"')).toBe(rtl);
   });
 });
 
