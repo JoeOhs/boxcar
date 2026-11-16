@@ -7,6 +7,7 @@ import { DEFAULT_IMAGE_MODEL, IMAGE_MODEL_SUGGESTIONS, IMAGE_PROVIDER_LABEL } fr
 import { useOnline } from "@/lib/hooks";
 import { addApiKey, deleteApiKey, revokeApiKey, setApiKeyModel, selectApiKey, useApiKeys } from "@/lib/keyVault";
 import { BackupControls } from "@/components/BackupControls";
+import { StorageUsage } from "@/components/StorageUsage";
 import { ModelSelect } from "@/components/ModelSelect";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -280,6 +281,7 @@ export function Settings() {
           </p>
           <BackupControls />
         </Card>
+        <StorageUsage />
       </div>
     </div>
   );
