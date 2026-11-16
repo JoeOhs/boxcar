@@ -4,6 +4,7 @@ import { sortChapters } from "./chapters";
 import { seedRoadmap } from "./roadmap";
 import { countWords, htmlToText } from "./text";
 import { bookTypeOf } from "./bookTypes";
+import { sanitizeDocument } from "./sanitize";
 
 /**
  * Translation of a whole book into another language, one chapter at a time.
@@ -75,6 +76,50 @@ export async function createTranslation(source: Manuscript, target: TargetLangua
   });
   await seedRoadmap(translation.id);
   return translation;
+}
+
+/**
+ * Brings a translation's chapter list in line with its original: a chapter added to the
+ * original since gets an empty chapter waiting to be translated, and every chapter takes
+ * the original's section and place. Chapters already translated keep their text.
+ * Returns how many chapters were added.
+ */
+export function syncTranslationChapters(translationId: Id): Promise<number> {
+  return db.transaction("rw", db.manuscripts, db.chapters, async () => {
+    const translation = await db.manuscripts.get(translationId);
+    if (!translation?.translationOf) return 0;
+    const [sources, existing] = await Promise.all([
+      db.chapters.where("manuscriptId").equals(translation.translationOf).toArray(),
+      db.chapters.where("manuscriptId").equals(translationId).toArray(),
+    ]);
+    const bySource = new Map(existing.filter((c) => c.sourceChapterId).map((c) => [c.sourceChapterId!, c]));
+    const now = Date.now();
+    let added = 0;
+    for (const source of sources) {
+      if (source.kind === "scrap") continue;
+      const mine = bySource.get(source.id);
+      if (!mine) {
+        await db.chapters.add({
+          id: newId(),
+          manuscriptId: translationId,
+          kind: source.kind,
+          title: "",
+          content: "",
+          wordCount: 0,
+          status: "draft",
+          order: source.order,
+          sourceChapterId: source.id,
+          translationState: "pending",
+          createdAt: now,
+          updatedAt: now,
+        });
+        added++;
+      } else if (mine.kind !== source.kind || mine.order !== source.order) {
+        await db.chapters.update(mine.id, { kind: source.kind, order: source.order });
+      }
+    }
+    return added;
+  });
 }
 
 /** Inline elements sit inside a paragraph; any other element is a block. */
@@ -162,17 +207,6 @@ async function translateBatch(settings: AiSettings, batch: string[], target: Tar
   return parsed as string[];
 }
 
-/** Removes anything that could run or restyle the page from text the AI sent back. */
-function sanitize(doc: Document): void {
-  doc.body.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach((node) => node.remove());
-  doc.body.querySelectorAll("*").forEach((el) => {
-    el.removeAttribute("style");
-    for (const name of el.getAttributeNames()) {
-      if (name.startsWith("on")) el.removeAttribute(name);
-    }
-  });
-}
-
 /**
  * Translates one chapter of a translation into the target language and stores it
  * on the translation's chapter. The chapter's title and every paragraph are
@@ -209,7 +243,7 @@ export async function translateChapter(
   blocks.forEach((block, i) => {
     block.innerHTML = translated[cursor + i];
   });
-  sanitize(parsed);
+  sanitizeDocument(parsed);
   const content = parsed.body.innerHTML;
   await db.chapters.update(translation.id, {
     title,

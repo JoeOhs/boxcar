@@ -552,7 +552,8 @@ function ChapterDesk({
                   scene={s}
                   index={i}
                   chapters={menu.chapters}
-                  onMoveScene={onMoveScene}
+                  // Save the draft first: a pending save after the move would write the moved scene back here.
+                  onMoveScene={(sceneId, target) => void draft.flush().then(() => onMoveScene(sceneId, target))}
                 />
               ))}
               <Button variant="outline" className="w-full border-dashed" onClick={() => draft.addScene()}>

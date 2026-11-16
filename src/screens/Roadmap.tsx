@@ -185,12 +185,15 @@ function RoadmapBody({ manuscript }: { manuscript: Manuscript }) {
                         <input
                           type="checkbox"
                           checked={card.done}
+                          disabled={!!card.editStage}
+                          title={card.editStage ? "Ticked when this pass is finished in Edit" : undefined}
                           onChange={(e) => void setRoadmapCardDone(card.id, e.target.checked)}
                           className="mt-0.5 size-4 accent-primary"
                         />
                         <span className="min-w-0 flex-1">
                           <span className={cn("block", card.done && "text-muted-foreground line-through")}>{card.title}</span>
                           {card.optional ? <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Optional</span> : null}
+                          {card.editStage ? <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Follows Edit</span> : null}
                         </span>
                         {card.done ? <Check className="mt-0.5 size-4 shrink-0 text-success" /> : null}
                       </label>

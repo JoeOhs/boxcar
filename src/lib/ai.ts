@@ -3,6 +3,7 @@ import { type AgentRole, type AiSettings, type EditStage, type SuggestionKind } 
 import { stageInfo } from "./editing";
 import { OLLAMA_CLOUD_URL, providerNeedsKey, normalizeServerUrl } from "./providers";
 import { getAiSettings } from "./keyVault";
+import { fetchWithTimeout, RequestTimeoutError } from "./request";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
@@ -103,7 +104,7 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
   let response: Response;
   try {
     if (settings.provider === "anthropic") {
-      response = await fetch("https://api.anthropic.com/v1/messages", {
+      response = await fetchWithTimeout("The AI provider", "https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -120,7 +121,7 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
       });
     } else {
       const { url, headers } = openAiStyleEndpoint(settings);
-      response = await fetch(url, {
+      response = await fetchWithTimeout(local ? "Ollama" : "The AI provider", url, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -129,7 +130,8 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
         }),
       });
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof RequestTimeoutError) throw e;
     throw new Error(
       local
         ? `Could not reach Ollama at ${normalizeServerUrl(settings.baseUrl ?? "")}. Check that Ollama is running and that it allows this app (set OLLAMA_ORIGINS).`
@@ -181,6 +183,42 @@ export function parseJson(reply: string, open: "[" | "{"): unknown {
   }
 }
 
+/** Characters of chapter text sent to the AI in one review request. */
+export const CHAPTER_PART_CHARACTERS = 24000;
+
+/**
+ * Splits a chapter's text into parts under `limit` characters, at paragraph breaks
+ * where it can, so every passage the AI quotes lies whole inside one part. A single
+ * paragraph longer than the limit is cut at a sentence end, else at a space.
+ */
+export function chapterParts(text: string, limit: number): string[] {
+  const pieces: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    let rest = paragraph;
+    while (rest.length > limit) {
+      const window = rest.slice(0, limit);
+      let cut = Math.max(window.lastIndexOf(". "), window.lastIndexOf("! "), window.lastIndexOf("? ")) + 1;
+      if (cut <= 0) cut = window.lastIndexOf(" ");
+      if (cut <= 0) cut = limit;
+      pieces.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+    }
+    pieces.push(rest);
+  }
+  const parts: string[] = [];
+  let current = "";
+  for (const piece of pieces) {
+    if (current && current.length + 1 + piece.length > limit) {
+      parts.push(current);
+      current = piece;
+    } else {
+      current = current ? `${current}\n${piece}` : piece;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts.length > 0 ? parts : [""];
+}
+
 /**
  * Asks the AI for one editing pass over one chapter. The developmental pass
  * returns notes about the story; line, copy and proofreading passes return
@@ -210,14 +248,20 @@ export async function requestStageReview(
         `"original", "replacement" and "comment". "original" must be copied exactly, character for character, ` +
         `from one single paragraph of the chapter and be long enough to be unique. "replacement" is the corrected text. ` +
         `"comment" is a short reason. Reply with [] if nothing needs changing.`;
-  const prompt = `${info.task}${guide}\n\n${format}${context}\n\nCHAPTER:\n${chapterText.slice(0, 24000)}`;
-
-  const reply = await askAi(settings, persona ?? info.persona, [{ role: "user", content: prompt }]);
-  const parsed = parseJson(reply, "[");
-  if (!Array.isArray(parsed)) throw new Error("The AI reply was not in the expected format. Try again.");
+  // A long chapter is read in parts, one request each, so no text is left unread.
+  const parts = chapterParts(chapterText, CHAPTER_PART_CHARACTERS);
+  const replies: unknown[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const label = parts.length > 1 ? `CHAPTER (part ${i + 1} of ${parts.length}; the other parts are reviewed separately):` : "CHAPTER:";
+    const prompt = `${info.task}${guide}\n\n${format}${context}\n\n${label}\n${parts[i]}`;
+    const reply = await askAi(settings, persona ?? info.persona, [{ role: "user", content: prompt }]);
+    const parsed = parseJson(reply, "[");
+    if (!Array.isArray(parsed)) throw new Error("The AI reply was not in the expected format. Try again.");
+    replies.push(...parsed);
+  }
 
   const edits: ProposedEdit[] = [];
-  for (const entry of parsed) {
+  for (const entry of replies) {
     if (typeof entry !== "object" || entry === null) continue;
     const { original, replacement, passage, comment } = entry as Record<string, unknown>;
     const why = typeof comment === "string" ? comment.trim() : "";

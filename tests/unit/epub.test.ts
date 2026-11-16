@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toXhtmlBody } from "./epub";
+import { toXhtmlBody } from "@/lib/epub";
 
 describe("toXhtmlBody", () => {
   it("turns horizontal rules into scene-break paragraphs with the chosen ornament", () => {

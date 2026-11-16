@@ -378,6 +378,8 @@ export interface RoadmapCard {
   screen?: "outline" | "write" | "edit" | "format" | "cover" | "export";
   /** An optional card does not hold up the stage: the author may skip it. */
   optional?: boolean;
+  /** The editing pass this card stands for. Such a card is ticked by finishing the pass in Edit, not by hand. */
+  editStage?: EditStage;
   done: boolean;
   /** Position within the column; sort ascending. */
   order: number;
@@ -476,30 +478,30 @@ export class BoxcarDB extends Dexie {
         universeNodes: "id, manuscriptId, kind, updatedAt",
       })
       .upgrade(async (tx) => {
-        const old = (await tx.table("storyEntries").toArray()) as {
-          id: Id;
-          manuscriptId: Id;
-          kind: string;
-          name: string;
-          description: string;
-          createdAt: Timestamp;
-          updatedAt: Timestamp;
-        }[];
-        const nodes: UniverseNode[] = old.map((entry) => ({
-          id: entry.id,
-          manuscriptId: entry.manuscriptId,
-          kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
-          name: entry.name,
-          summary: entry.description,
-          tags: [],
-          fields: [],
-          links: [],
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt,
-        }));
+        const old = (await tx.table("storyEntries").toArray()) as StoryEntry[];
+        const nodes = old.map(storyEntryToNode);
         if (nodes.length > 0) await tx.table("universeNodes").bulkAdd(nodes);
       });
   }
+}
+
+/**
+ * A story-info entry (database version 6) as a Universe node. Used by the version 7
+ * upgrade and when a backup made before version 7 is opened.
+ */
+export function storyEntryToNode(entry: StoryEntry): UniverseNode {
+  return {
+    id: entry.id,
+    manuscriptId: entry.manuscriptId,
+    kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
+    name: entry.name,
+    summary: entry.description,
+    tags: [],
+    fields: [],
+    links: [],
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  };
 }
 
 export const db = new BoxcarDB();
@@ -530,50 +532,57 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
  * Delete a manuscript and everything that belongs to it. Deleting a series also
  * deletes its books, and deleting a book also deletes its translations.
  */
-export async function deleteManuscript(manuscriptId: Id): Promise<void> {
-  const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
-  const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
-  for (const childId of [...children, ...translations]) {
-    await deleteManuscript(childId);
-  }
-  return db.transaction(
-    "rw",
-    [
-      db.manuscripts,
-      db.outlineItems,
-      db.storyEntries,
-      db.chapters,
-      db.revisions,
-      db.suggestions,
-      db.agentMessages,
-      db.coverConcepts,
-      db.roadmapCards,
-      db.researchNotes,
-      db.universeNodes,
-    ],
-    async () => {
-      await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
-      await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
-      await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
-      await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
-      await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
-      await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
-      await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.manuscripts.delete(manuscriptId);
-    },
-  );
+export function deleteManuscript(manuscriptId: Id): Promise<void> {
+  return db.transaction("rw", manuscriptTables(), () => removeManuscript(manuscriptId));
 }
 
-/** Delete a workspace and every manuscript in it. */
-export async function deleteWorkspace(workspaceId: Id): Promise<void> {
-  const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
-  for (const id of ids) {
-    await deleteManuscript(id);
-  }
-  await db.workspaces.delete(workspaceId);
+/** Delete a workspace and every manuscript in it. It all goes, or nothing does. */
+export function deleteWorkspace(workspaceId: Id): Promise<void> {
+  return db.transaction("rw", [db.workspaces, ...manuscriptTables()], async () => {
+    const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
+    for (const id of ids) await removeManuscript(id);
+    await db.workspaces.delete(workspaceId);
+  });
+}
+
+/** Every table that holds a manuscript or rows belonging to one. */
+function manuscriptTables() {
+  return [
+    db.manuscripts,
+    db.outlineItems,
+    db.storyEntries,
+    db.chapters,
+    db.revisions,
+    db.suggestions,
+    db.agentMessages,
+    db.coverConcepts,
+    db.roadmapCards,
+    db.researchNotes,
+    db.universeNodes,
+  ];
+}
+
+/**
+ * The body of deleteManuscript. It must run inside a transaction over manuscriptTables(),
+ * so a series, its books and their translations are removed together or not at all.
+ */
+async function removeManuscript(manuscriptId: Id): Promise<void> {
+  const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
+  const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
+  for (const childId of [...children, ...translations]) await removeManuscript(childId);
+  // A book already removed through another path (a series book that is also a translation) is skipped.
+  if (!(await db.manuscripts.get(manuscriptId))) return;
+  await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
+  await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
+  await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
+  await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
+  await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
+  await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
+  await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.manuscripts.delete(manuscriptId);
 }
 
 /** Delete a chapter with its revisions and suggestions, and unlink it from the outline. */

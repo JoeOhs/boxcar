@@ -1,4 +1,4 @@
-import { db, newId, type Id, type ManuscriptStatus, type RoadmapCard } from "@/db/schema";
+import { db, newId, type EditStage, type Id, type ManuscriptStatus, type RoadmapCard } from "@/db/schema";
 
 /** The Roadmap's columns: the stages a manuscript passes through, from outline to publish. */
 export const ROADMAP_COLUMNS: { id: ManuscriptStatus; label: string; blurb: string }[] = [
@@ -12,17 +12,17 @@ export const ROADMAP_COLUMNS: { id: ManuscriptStatus; label: string; blurb: stri
 type CardScreen = NonNullable<RoadmapCard["screen"]>;
 
 /** The outline cards are optional: an author may write without an outline and skip them. */
-const FIRST_CARDS: { column: ManuscriptStatus; title: string; screen?: CardScreen; optional?: boolean }[] = [
+const FIRST_CARDS: { column: ManuscriptStatus; title: string; screen?: CardScreen; optional?: boolean; editStage?: EditStage }[] = [
   { column: "outlining", title: "Choose a genre and a structure to follow", screen: "outline", optional: true },
   { column: "outlining", title: "Build the outline: acts, chapters, scenes", screen: "outline", optional: true },
   { column: "outlining", title: "Create the chapters from the outline", screen: "outline", optional: true },
   { column: "drafting", title: "Write the first draft", screen: "write" },
   { column: "drafting", title: "Gather research for the book", screen: "write" },
   { column: "drafting", title: "Reach the target word count", screen: "write" },
-  { column: "editing", title: "Developmental edit: the big picture", screen: "edit" },
-  { column: "editing", title: "Line edit: the prose", screen: "edit" },
-  { column: "editing", title: "Copy edit: grammar and consistency", screen: "edit" },
-  { column: "editing", title: "Proofread: the final check", screen: "edit" },
+  { column: "editing", title: "Developmental edit: the big picture", screen: "edit", editStage: "developmental" },
+  { column: "editing", title: "Line edit: the prose", screen: "edit", editStage: "line" },
+  { column: "editing", title: "Copy edit: grammar and consistency", screen: "edit", editStage: "copy" },
+  { column: "editing", title: "Proofread: the final check", screen: "edit", editStage: "proofread" },
   { column: "formatting", title: "Choose how the book looks", screen: "format" },
   { column: "formatting", title: "Check the preview page by page", screen: "format" },
   { column: "formatting", title: "Design the cover", screen: "cover" },
@@ -44,6 +44,17 @@ export function seedRoadmap(manuscriptId: Id): Promise<void> {
         .filter((c) => c.column === "outlining" && c.screen === "outline" && c.optional === undefined)
         .toArray();
       for (const card of older) await db.roadmapCards.update(card.id, { optional: true });
+      // Edit cards made before they were linked to their pass are linked now, by their original title.
+      const unlinked = await db.roadmapCards
+        .where("manuscriptId")
+        .equals(manuscriptId)
+        .filter((c) => c.column === "editing" && c.editStage === undefined)
+        .toArray();
+      for (const card of unlinked) {
+        const stage = FIRST_CARDS.find((f) => f.editStage && f.title === card.title)?.editStage;
+        if (stage) await db.roadmapCards.update(card.id, { editStage: stage });
+      }
+      await syncEditCards(manuscriptId);
       return;
     }
     const now = Date.now();
@@ -58,6 +69,7 @@ export function seedRoadmap(manuscriptId: Id): Promise<void> {
         title: card.title,
         screen: card.screen,
         optional: card.optional ?? false,
+        ...(card.editStage ? { editStage: card.editStage } : {}),
         done: false,
         order,
         createdAt: now,
@@ -65,6 +77,26 @@ export function seedRoadmap(manuscriptId: Id): Promise<void> {
     });
     await db.roadmapCards.bulkAdd(cards);
     await db.manuscripts.update(manuscriptId, { roadmapSeeded: true });
+  });
+}
+
+/**
+ * Makes the edit cards match the editing passes: a card is ticked exactly when its pass
+ * is finished in Edit. Then moves the book's stage on if that finished a column.
+ * The passes are the one record of editing progress; the cards only show it.
+ */
+export function syncEditCards(manuscriptId: Id): Promise<void> {
+  return db.transaction("rw", db.manuscripts, db.roadmapCards, async () => {
+    const manuscript = await db.manuscripts.get(manuscriptId);
+    if (!manuscript) return;
+    const completed = manuscript.editWorkflow?.completed ?? [];
+    const cards = await db.roadmapCards.where("manuscriptId").equals(manuscriptId).toArray();
+    for (const card of cards) {
+      if (!card.editStage) continue;
+      const done = completed.includes(card.editStage);
+      if (card.done !== done) await db.roadmapCards.update(card.id, { done });
+    }
+    await advanceStage(manuscriptId);
   });
 }
 
@@ -118,7 +150,8 @@ export async function advanceStage(manuscriptId: Id): Promise<void> {
 /** Ticks or unticks a step. A required step that is ticked may move the book on to its next stage. */
 export async function setRoadmapCardDone(id: Id, done: boolean): Promise<void> {
   const card = await db.roadmapCards.get(id);
-  if (!card) return;
+  // A card linked to an editing pass follows the pass (syncEditCards), never a click.
+  if (!card || card.editStage) return;
   await db.roadmapCards.update(id, { done });
   if (!card.optional && done) await advanceStage(card.manuscriptId);
 }
