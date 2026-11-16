@@ -245,6 +245,11 @@ export interface Chapter {
   /** For a translated chapter: where it is in its review. */
   translationState?: TranslationState;
   /**
+   * For a translated chapter: true when the original chapter it was translated from has
+   * been deleted. The translation is kept for the author to decide on (F15).
+   */
+  sourceDeleted?: boolean;
+  /**
    * The AI-written summary the developmental editors read in place of the full text.
    * Made from every word of the chapter; reused until the chapter's text changes.
    */
@@ -618,7 +623,11 @@ async function removeManuscript(manuscriptId: Id, removed: Set<Id>): Promise<voi
   removed.add(manuscriptId);
 }
 
-/** Delete a chapter with its revisions and suggestions, and unlink it from the outline. */
+/**
+ * Delete a chapter with its revisions and suggestions, and unlink it from the outline.
+ * Translations of it are kept, unlinked and flagged `sourceDeleted`, so translated work
+ * is never lost by deleting the original (F15).
+ */
 export function deleteChapter(chapterId: Id): Promise<void> {
   return db.transaction("rw", [db.chapters, db.revisions, db.suggestions, db.outlineItems], async () => {
     await db.revisions.where("chapterId").equals(chapterId).delete();
@@ -626,6 +635,13 @@ export function deleteChapter(chapterId: Id): Promise<void> {
     await db.outlineItems.where("chapterId").equals(chapterId).modify((item) => {
       delete item.chapterId;
     });
+    // sourceChapterId is not indexed, so translated chapters are found by a scan.
+    await db.chapters
+      .filter((c) => c.sourceChapterId === chapterId)
+      .modify((c) => {
+        delete c.sourceChapterId;
+        c.sourceDeleted = true;
+      });
     await db.chapters.delete(chapterId);
   });
 }

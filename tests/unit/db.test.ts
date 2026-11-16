@@ -125,12 +125,18 @@ describe("cascade deletes", () => {
     expect((await db.outlineItems.get(item.id))?.chapterId).toBeUndefined();
   });
 
-  it.fails("BUG-orphan-translation: deleteChapter leaves no translated chapter pointing at a missing source", async () => {
+  it("F15: deleteChapter leaves no translated chapter pointing at a missing source", async () => {
     const { c } = await fullBook();
+    const translated = await db.chapters.filter((x) => x.sourceChapterId === c.id).toArray();
+    expect(translated.length).toBeGreaterThan(0);
     await deleteChapter(c.id);
     const dangling = await db.chapters.filter((x) => x.sourceChapterId === c.id).count();
-    // FINDING: translation chapter keeps sourceChapterId of a deleted chapter.
     expect(dangling).toBe(0);
+    // The translation is kept, with its text, and flagged for the author.
+    for (const t of translated) {
+      const kept = await db.chapters.get(t.id);
+      expect(kept).toMatchObject({ content: t.content, sourceDeleted: true });
+    }
   });
 
   it("deleteOutlineItem removes descendants only", async () => {

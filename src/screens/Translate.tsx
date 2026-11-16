@@ -217,6 +217,12 @@ function ChapterReview({
         </div>
       </div>
 
+      {chapter.sourceDeleted ? (
+        <p className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+          The original of this chapter was deleted from the book. The translation is kept so nothing is lost: keep it as it is, or delete it in
+          the translation&apos;s Write screen if you no longer need it. It can&apos;t be translated again.
+        </p>
+      ) : null}
       {!ai && !busy ? (
         <p className="text-sm text-muted-foreground">Translating and proofreading need an AI key. Add one in Settings.</p>
       ) : null}
@@ -305,7 +311,7 @@ function TranslationWork({ source, translation }: { source: Manuscript; translat
                 {original?.title || c.title || (c.kind === "chapter" ? "Untitled chapter" : c.kind === "front" ? "Front matter" : "Back matter")}
               </span>
               <span className={cn("shrink-0 text-[11px]", state === "approved" ? "text-success" : "text-muted-foreground")}>
-                {state === "approved" ? <Check className="size-3.5" /> : STATE_LABEL[state]}
+                {c.sourceDeleted ? "Original deleted" : state === "approved" ? <Check className="size-3.5" /> : STATE_LABEL[state]}
               </span>
             </button>
           );

@@ -2,7 +2,7 @@
 
 Storage is IndexedDB through Dexie, entirely on the author's machine (no accounts, no server). The schema is in `src/db/schema.ts`. All ids are UUID strings made by `newId()`; timestamps are milliseconds since epoch. IndexedDB has no foreign keys, so `deleteWorkspace`, `deleteManuscript`, `deleteChapter` and `deleteOutlineItem` in that file clean up children.
 
-Relationships: `Workspace 1-* Manuscript`; `Manuscript 1-* OutlineItem`, `Chapter`, `AgentMessage`, `CoverConcept`, `UniverseNode`, `ResearchNote`, `RoadmapCard`; `Chapter 1-* Revision`, `Suggestion`; `OutlineItem *-0..1 Chapter`; `Manuscript (series) 1-* Manuscript` through `seriesId`; `Manuscript 1-* Manuscript (translation)` through `translationOf`, with each translated `Chapter` pointing at its original through `sourceChapterId`.
+Relationships: `Workspace 1-* Manuscript`; `Manuscript 1-* OutlineItem`, `Chapter`, `AgentMessage`, `CoverConcept`, `UniverseNode`, `ResearchNote`, `RoadmapCard`; `Chapter 1-* Revision`, `Suggestion`; `OutlineItem *-0..1 Chapter`; `Manuscript (series) 1-* Manuscript` through `seriesId`; `Manuscript 1-* Manuscript (translation)` through `translationOf`, with each translated `Chapter` pointing at its original through `sourceChapterId`. Deleting an original chapter keeps its translations: the link is removed and the translated chapter is flagged `sourceDeleted`, which the Translate screen shows as “Original deleted”.
 
 Deletes that touch several tables (`deleteWorkspace`, `deleteManuscript` and their children) run inside one Dexie transaction, so a failure part-way leaves nothing half-deleted.
 
