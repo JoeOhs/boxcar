@@ -64,7 +64,7 @@ test("workspace gating, write, autosave, reload, persistence", async ({ page, er
     await page.reload();
     await expect(page.locator("body")).toContainText("Jane Marlowe");
   });
-  expect.soft(errors.filter((e) => !e.includes("about:srcdoc")), "no console/page errors (srcdoc sandbox warning tracked as finding)").toEqual([]);
+  expect.soft(errors.filter((e) => !e.includes("about:srcdoc")), "no console/page errors (the about:srcdoc warning is Playwright tracing being blocked by the preview sandbox; see F24)").toEqual([]);
   expect(external, "no network calls made by local features").toEqual([]);
 });
 
@@ -151,7 +151,7 @@ test("export EPUB/DOCX, format, edit pass, translate, backup, offline", async ({
     expect.soft(overflow, "no horizontal scroll at 375px").toBeLessThanOrEqual(0);
   });
 
-  expect.soft(errors.filter((e) => !e.includes("about:srcdoc")), "no console/page errors (srcdoc sandbox warning tracked as finding)").toEqual([]);
+  expect.soft(errors.filter((e) => !e.includes("about:srcdoc")), "no console/page errors (the about:srcdoc warning is Playwright tracing being blocked by the preview sandbox; see F24)").toEqual([]);
   const unexpected = external.filter((u) => !u.includes("api.openai.com"));
   expect(unexpected, "only the chosen AI provider is contacted").toEqual([]);
 });
