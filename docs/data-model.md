@@ -2,7 +2,9 @@
 
 Storage is IndexedDB through Dexie, entirely on the author's machine (no accounts, no server). The schema is in `src/db/schema.ts`. All ids are UUID strings made by `newId()`; timestamps are milliseconds since epoch. IndexedDB has no foreign keys, so `deleteWorkspace`, `deleteManuscript`, `deleteChapter` and `deleteOutlineItem` in that file clean up children.
 
-Relationships: `Workspace 1-* Manuscript`; `Manuscript 1-* OutlineItem`, `Chapter`, `AgentMessage`, `CoverConcept`; `Chapter 1-* Revision`, `Suggestion`; `OutlineItem *-0..1 Chapter`.
+Relationships: `Workspace 1-* Manuscript`; `Manuscript 1-* OutlineItem`, `Chapter`, `AgentMessage`, `CoverConcept`, `UniverseNode`, `ResearchNote`, `RoadmapCard`; `Chapter 1-* Revision`, `Suggestion`; `OutlineItem *-0..1 Chapter`; `Manuscript (series) 1-* Manuscript` through `seriesId`; `Manuscript 1-* Manuscript (translation)` through `translationOf`, with each translated `Chapter` pointing at its original through `sourceChapterId`.
+
+Deletes that touch several tables (`deleteWorkspace`, `deleteManuscript` and their children) run inside one Dexie transaction, so a failure part-way leaves nothing half-deleted.
 
 ## Workspace
 One author or pen name. It stores the pen name, a short bio and timestamps. It exists so manuscripts are organised by who they are published under; the pen name is also what goes into the epub author field. Every manuscript belongs to exactly one workspace.
@@ -35,4 +37,16 @@ One cover picture made by the Book Cover workshop (added in database version 2).
 A key/value row for app-wide preferences. API keys are no longer kept here: see `ApiKey` below. Keys are `editModels`, `keyVaultKey` (the non-extractable AES-GCM key that encrypts the API keys), `activeKey:text` and `activeKey:image` (which stored key is in use), the active workspace and manuscript, and theme.
 
 ## ApiKey (table `apiKeys`)
-One API key the author entered, for the AI staff and Ghostwriter (`kind` "text": OpenAI or Anthropic) or the Book Cover workshop (`kind` "image": OpenAI or Google Gemini). It holds the provider, model, the last four characters, a status (active or revoked), the dates, and `secret`: the key encrypted with AES-GCM. The plain key is never stored. Revoking wipes `secret` and keeps the row; deleting removes it. The decrypted key exists only in memory when a request is sent to the chosen provider.
+One API key the author entered, for the AI staff and Ghostwriter (`kind` "text": OpenAI, Anthropic, Hugging Face, Ollama on this computer, or Ollama Cloud; a local Ollama needs no secret) or the Book Cover workshop (`kind` "image": OpenAI or Google Gemini). It holds the provider, model, the last four characters, a status (active or revoked), the dates, and `secret`: the key encrypted with AES-GCM. The plain key is never stored. Revoking wipes `secret` and keeps the row; deleting removes it. The decrypted key exists only in memory when a request is sent to the chosen provider.
+
+## UniverseNode (table `universeNodes`)
+One wiki page in the Universe screen (database version 7): a character, location, situation, concept, item, faction or event. It stores a name, a short summary, tags (which set its colour and group related nodes), a list of free fields such as "Clothing preferences", links to other nodes, and an optional image (uploaded or made by the image AI). It replaced `StoryEntry`: the version 7 upgrade copied every story entry into a node, and restoring an older backup runs the same conversion.
+
+## ResearchNote (table `researchNotes`)
+One item in a manuscript’s research repository (database version 4): a note, a web link or an imported file’s text. `shareWithGhostwriter` decides whether the Ghostwriter reads it as background for the book.
+
+## RoadmapCard (table `roadmapCards`)
+One task card on the Roadmap board (database version 4). Columns are the manuscript stages. A card may name the screen that does the task, may be optional (it does not hold up its stage), and may stand for an editing pass (`editStage`). Cards for editing passes are not ticked by hand: they follow `Manuscript.editWorkflow`, which is the single record of editing progress.
+
+## StoryEntry (table `storyEntries`, retired)
+The Outline’s story info from database version 6 (characters, locations, situations). Since version 7 it is no longer used: its rows were moved into `UniverseNode`. The table still exists so old databases and backups can be read, and `deleteManuscript` still clears it (audit finding F27).

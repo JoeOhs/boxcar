@@ -48,7 +48,7 @@ I want to create a desktop app for writing books. The idea is that the app is an
 - (none)
 
 ## Stack
-Backend: yes. People sign in, so something has to store accounts and their data.
+Backend: no. Everything is stored on the author’s computer (IndexedDB), with no accounts and no server.
 Tested combination: Content / publishing.
 - framework: Vite + React (by recommender)
 - styling: Tailwind CSS
@@ -67,3 +67,4 @@ Never resolved silently: ask the person.
 - v1, 2026-10-09, by Ganger: Written from the brief and the stack decision, before any journeyman ran.
 - v2, 2026-10-09, by the foreman, approved by the person: Round 2: added MH-6 "a separate workspace for each author or pen name, chosen or created on the first screen". Separate workspaces for each author are a new thing the app must do. The segment, editing-pass and AI-formatting requests change how writing, editing and formatting work, so they don't need new must-haves.
 - v3, 2026-10-09, by the foreman, approved by the person: Round 3: added MH-7 "a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)", added MH-8 "a genre guide (fiction and non-fiction) when creating a new manuscript". Most of these changes only adjust how the app works, but the Book Cover workshop and the genre guide for new manuscripts are new things the app must do, so I've added them as must-haves.
+- v4, 2026-11-15, by the project, at the person’s request: Corrected the stack gate. It said "Backend: yes. People sign in", which was worked out before the stack overrides (auth, realtime and deploy set to none, data set to IndexedDB) and never recalculated. The Ganger team confirmed the bug and fixed it in Ganger on 2026-10-09; Boxcar was generated before that fix. needsBackend is now false, matching the overrides and the shipped app. Requested by Joe after the Ganger team said the stale lines could be deleted.

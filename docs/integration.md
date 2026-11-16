@@ -1,6 +1,6 @@
 # Integration
 
-Each must-have from `ganger/brain/CONSTITUTION.md`, with the file and function that implements it. Every screen reads and writes the Dexie database in `src/db/schema.ts` (through `src/lib/store.ts` or the table itself); no screen keeps its own copy of stored data. Every screen is reached from the sidebar in `src/App.tsx`, which is only shown once a workspace has been chosen on the first screen. The same list, in machine-readable form, is `ganger/reports/coverage.json`.
+Each must-have from `ganger/brain/CONSTITUTION.md`, with the file and function that implements it. Every screen reads and writes the Dexie database in `src/db/schema.ts` (through `src/lib/store.ts` or the table itself); no screen keeps its own copy of stored data. Every screen is reached from the sidebar in `src/App.tsx`, which is only shown once a workspace has been chosen on the first screen.
 
 | Must-have | Screen (reachable from the sidebar) | Main function | Data it works on |
 | --- | --- | --- | --- |

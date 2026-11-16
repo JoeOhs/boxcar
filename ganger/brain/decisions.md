@@ -2,7 +2,7 @@
 
 ## The stack
 
-Backend: yes. People sign in, so something has to store accounts and their data.
+Backend: no. Everything is stored on the author’s computer (IndexedDB), with no accounts and no server.
 Archetype: Content / publishing (content-publishing). Publishing apps are read-heavy with a small set of writers; a standard hosted web stack with realtime-capable data covers drafts, publishing, and readers.
 - framework: Vite + React (overridden) - A local desktop writing app needs a fast, dependency-light shell that ships as one bundle.
 - styling: Tailwind CSS - Utility CSS keeps generated components consistent without a design system to learn.
@@ -50,6 +50,12 @@ Archetype: Content / publishing (content-publishing). Publishing apps are read-h
 - **Why:** Ships as a self-contained, installable desktop-ready app with no server to run.
 - **By:** recommender
 - **When:** 2026-10-09T02:23:57.178Z
+
+### backend gate: yes -> no (correction)
+
+- **Why:** The original line ("Backend: yes. People sign in") was computed before the overrides above and never recalculated. With auth, realtime and deploy all set to none and data in IndexedDB, there is no backend.
+- **By:** the project, at the person’s request, after the Ganger team confirmed the bug
+- **When:** 2026-11-15
 
 ## What the person decided
 

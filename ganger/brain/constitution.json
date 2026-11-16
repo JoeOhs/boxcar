@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "purpose": "I want to create a desktop app for writing books. The idea is that the app is an entire publishing company from draft to ebook - with each role of the company filled by AI agents. The app should be minimalistic and elegant but full of features that you would find in Reedsy or Scrivener. I want to employ workspaces for each author/pen name, so that manuscripts are organized by their respective author/pen name, and I want a built in outline workshop feature that facilitates an environment for building the bones of their manuscript.",
   "principles": [
     {
@@ -83,8 +83,8 @@
   ],
   "nonGoals": [],
   "stack": {
-    "needsBackend": true,
-    "gate": "People sign in, so something has to store accounts and their data.",
+    "needsBackend": false,
+    "gate": "No backend. Everything is stored on the author’s computer (IndexedDB), with no accounts and no server.",
     "preset": "Content / publishing",
     "pieces": [
       {
@@ -148,6 +148,12 @@
       "at": "2026-10-09T04:14:05.835Z",
       "by": "the foreman, approved by the person",
       "reason": "Round 3: added MH-7 \"a Book Cover workshop for designing book covers with image-generating AI (needs a compatible API key)\", added MH-8 \"a genre guide (fiction and non-fiction) when creating a new manuscript\". Most of these changes only adjust how the app works, but the Book Cover workshop and the genre guide for new manuscripts are new things the app must do, so I've added them as must-haves."
+    },
+    {
+      "version": 4,
+      "at": "2026-11-15T00:00:00.000Z",
+      "by": "the project, at the person’s request",
+      "reason": "Corrected the stack gate. It said \"Backend: yes. People sign in\", which was worked out before the stack overrides (auth, realtime and deploy set to none, data set to IndexedDB) and never recalculated. The Ganger team confirmed the bug and fixed it in Ganger on 2026-10-09; Boxcar was generated before that fix. needsBackend is now false, matching the overrides and the shipped app. Requested by Joe after the Ganger team said the stale lines could be deleted."
     }
   ]
 }
