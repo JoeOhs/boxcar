@@ -1,6 +1,7 @@
 import { db, newId, type AiSettings, type Chapter, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
 import { askAi, parseJson } from "./ai";
-import { ensureSummaries, hasFreshSummary } from "./chapterSummary";
+import { categoryOf, ensureSummaries, hasFreshSummary } from "./chapterSummary";
+import type { GenreCategory } from "./genres";
 import { chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { genreById, genreContext } from "./genres";
 import { htmlToText } from "./text";
@@ -71,9 +72,9 @@ function outlineLines(items: OutlineItem[]): string[] {
 }
 
 /** What the developmental editors read for one chapter: its AI summary, made from every word of it. */
-function chapterBrief(chapter: Chapter): string {
+function chapterBrief(chapter: Chapter, kind: GenreCategory): string {
   if (!htmlToText(chapter.content).trim()) return "(empty)";
-  if (hasFreshSummary(chapter)) return chapter.devSummary!.text.replace(/\s+/g, " ");
+  if (hasFreshSummary(chapter, kind)) return chapter.devSummary!.text.replace(/\s+/g, " ");
   return "(not summarised yet: run the developmental pass to summarise it)";
 }
 
@@ -98,7 +99,7 @@ export async function bigPicture(manuscript: Manuscript, chapters?: Chapter[]): 
   parts.push(
     `Chapters:\n${sorted
       .map(
-        (c, i) => `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${chapterBrief(c)}`,
+        (c, i) => `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${chapterBrief(c, categoryOf(manuscript))}`,
       )
       .join("\n")}`,
   );
@@ -112,7 +113,7 @@ export async function summarisedBigPicture(
   onProgress?: (message: string) => void,
 ): Promise<string> {
   const loaded = (await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((c) => c.kind !== "scrap");
-  const chapters = await ensureSummaries(settings, loaded, (done, total, chapter) =>
+  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total, chapter) =>
     onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
   );
   return bigPicture(manuscript, chapters);
@@ -141,7 +142,7 @@ export async function runDevelopmentalReview(
   if (!loaded.some((c) => htmlToText(c.content).trim())) {
     throw new Error("Write at least one chapter before the developmental pass.");
   }
-  const chapters = await ensureSummaries(settings, loaded, (done, total, chapter) =>
+  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total, chapter) =>
     onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
   );
   // No cap: summaries keep the book small, and cutting it would hide chapters from the editors.

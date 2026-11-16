@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { db, type AiSettings } from "@/db/schema";
 import { CHAPTER_PART_CHARACTERS, requestStageReview } from "@/lib/ai";
+import { SUMMARY_BRIEF_FICTION, SUMMARY_BRIEF_NONFICTION } from "@/lib/chapterSummary";
 import { runDevelopmentalReview } from "@/lib/developmentalReview";
 import { saveChapter } from "@/lib/store";
 import { chapter, mockFetch, openAiReply, seedBook, type Call } from "./helpers";
@@ -78,6 +79,22 @@ describe("developmental pass (F28)", () => {
     const parts = calls.filter(isSummaryCall);
     expect(parts.length).toBeGreaterThan(1);
     expect(promptOf(parts[parts.length - 1])).toContain("THE-LAST-LINE");
+  });
+
+  it.each([
+    ["fantasy", SUMMARY_BRIEF_FICTION],
+    ["memoir", SUMMARY_BRIEF_NONFICTION],
+    [undefined, SUMMARY_BRIEF_FICTION],
+  ])("a book in genre %s is summarised with the matching brief", async (genre, brief) => {
+    const { m } = await seedBook();
+    await db.manuscripts.update(m.id, { genre });
+    await chapter(m, "<p>Text.</p>", "chapter", "Alpha");
+    const calls = fakeAi();
+
+    await runDevelopmentalReview((await db.manuscripts.get(m.id))!, S);
+
+    const summary = calls.find(isSummaryCall)!;
+    expect(promptOf(summary).startsWith(brief)).toBe(true);
   });
 
   it("keeps summaries already written when a later request fails", async () => {
