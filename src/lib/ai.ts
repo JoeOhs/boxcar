@@ -173,14 +173,17 @@ export interface ProposedEdit {
 /** Finds the JSON in an AI reply (which may be wrapped in prose or code fences) and parses it. */
 export function parseJson(reply: string, open: "[" | "{"): unknown {
   const close = open === "[" ? "]" : "}";
-  const start = reply.indexOf(open);
   const end = reply.lastIndexOf(close);
-  if (start === -1 || end <= start) throw new Error("The AI reply was not in the expected format. Try again.");
-  try {
-    return JSON.parse(reply.slice(start, end + 1));
-  } catch {
-    throw new Error("The AI reply was not in the expected format. Try again.");
+  // The JSON may follow prose that itself contains the opening bracket ("[Note] here you go: [...]"),
+  // so try each opening bracket in turn until one parses (F18).
+  for (let start = reply.indexOf(open); start !== -1 && start < end; start = reply.indexOf(open, start + 1)) {
+    try {
+      return JSON.parse(reply.slice(start, end + 1));
+    } catch {
+      // Not the start of the JSON; try the next bracket.
+    }
   }
+  throw new Error("The AI reply was not in the expected format. Try again.");
 }
 
 /** Characters of chapter text sent to the AI in one review request. */

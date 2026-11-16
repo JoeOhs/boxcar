@@ -109,12 +109,11 @@ describe("cascade deletes", () => {
     expect(c.manuscripts + c.chapters + c.roadmapCards + c.workspaces).toBe(0);
   });
 
-  it.fails("BUG-dangling-settings: deleteWorkspace leaves no dangling active-workspace/manuscript setting", async () => {
+  it("F16: deleteWorkspace leaves no dangling active-workspace/manuscript setting", async () => {
     const { ws, m } = await seedBook();
     await db.settings.bulkPut([{ key: "activeWorkspaceId", value: ws.id }, { key: "activeManuscriptId", value: m.id }]);
     await deleteWorkspace(ws.id);
     const left = (await db.settings.toArray()).filter((s) => s.value === ws.id || s.value === m.id);
-    // FINDING: the settings still point at deleted rows.
     expect(left.map((s) => s.key)).toEqual([]);
   });
 

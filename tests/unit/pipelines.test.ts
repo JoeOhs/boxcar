@@ -121,7 +121,7 @@ describe("import", () => {
     await expect(planImport(file("x.pdf", "%PDF"))).rejects.toThrow(/cannot be read/);
     await expect(planImport(file("x.txt", "   \n  "))).rejects.toThrow(/No text/);
   });
-  it.fails("BUG-corrupt-zip-message: a corrupt .docx shows a raw JSZip error instead of a plain message", async () => {
+  it("F19: a corrupt .docx shows a plain message, not a raw JSZip error", async () => {
     await expect(planImport(file("x.docx", "not a zip"))).rejects.toThrow(/(cannot|could not) read|not a/i);
   });
 });
@@ -182,7 +182,7 @@ describe("translation", () => {
     await translateChapter(AI, src, tch, { code: "es", name: "Spanish" });
     expect((await db.chapters.get(tch.id))!.content).not.toContain("javascript:");
   });
-  it.fails("BUG-oversized-paragraph: a single paragraph over BATCH_CHARACTERS is still sent whole", async () => {
+  it("F20: a single paragraph over BATCH_CHARACTERS is split across requests", async () => {
     const { src, tch } = await setup(`<p>${"z".repeat(20000)}</p>`);
     const calls = mockFetch(echo());
     await translateChapter(AI, src, tch, { code: "es", name: "Spanish" });

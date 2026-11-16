@@ -235,8 +235,17 @@ function wordFlag(rPr: Element | null, tag: string): boolean {
   return value !== "0" && value !== "false";
 }
 
+/** Opens a .docx or .epub (both are zip files), with a plain message when the file is damaged (F19). */
+async function openZip(file: File, kind: string): Promise<JSZip> {
+  try {
+    return await JSZip.loadAsync(await file.arrayBuffer());
+  } catch {
+    throw new Error(`Could not read "${file.name}". It is not a valid ${kind} file, or it is damaged. Try saving it again from the program that made it.`);
+  }
+}
+
 async function readDocx(file: File): Promise<ReadDocument> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const zip = await openZip(file, "Word document (.docx)");
   const main = zip.file("word/document.xml");
   if (!main) throw new Error("That file is not a Word document (.docx) this app can read.");
   const xml = new DOMParser().parseFromString(await main.async("string"), "application/xml");
@@ -312,7 +321,7 @@ function resolveInZip(base: string, href: string): string {
 }
 
 async function readEpub(file: File): Promise<ReadDocument> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const zip = await openZip(file, "epub");
   const container = zip.file("META-INF/container.xml");
   if (!container) throw new Error("That file is not an epub this app can read.");
   const containerXml = new DOMParser().parseFromString(await container.async("string"), "application/xml");

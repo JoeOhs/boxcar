@@ -107,7 +107,7 @@ describe("backup", () => {
     await restoreBackup({ app: "boxcar-studio", version: 1, savedAt: 1, tables: { storyEntries: [entry], universeNodes: [] } });
     expect(await db.universeNodes.count()).toBe(0);
   });
-  it.fails("BUG-summary-mismatch: summarizeBackup counts settings rows but summarizeCurrent does not", async () => {
+  it("F17: summarizeBackup and summarizeCurrent count the same rows (settings left out of both)", async () => {
     await setSetting("theme", "light");
     const b = summarizeBackup(await collectBackup());
     const cur = await summarizeCurrent();

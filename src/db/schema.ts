@@ -546,16 +546,35 @@ export async function saveEditModel(provider: AiProvider, stage: EditStage, mode
  * deletes its books, and deleting a book also deletes its translations.
  */
 export function deleteManuscript(manuscriptId: Id): Promise<void> {
-  return db.transaction("rw", manuscriptTables(), () => removeManuscript(manuscriptId));
+  return db.transaction("rw", [db.settings, ...manuscriptTables()], async () => {
+    const removed = new Set<Id>();
+    await removeManuscript(manuscriptId, removed);
+    await clearActivePointers(removed);
+  });
 }
 
 /** Delete a workspace and every manuscript in it. It all goes, or nothing does. */
 export function deleteWorkspace(workspaceId: Id): Promise<void> {
-  return db.transaction("rw", [db.workspaces, ...manuscriptTables()], async () => {
+  return db.transaction("rw", [db.workspaces, db.settings, ...manuscriptTables()], async () => {
+    const removed = new Set<Id>();
     const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
-    for (const id of ids) await removeManuscript(id);
+    for (const id of ids) await removeManuscript(id, removed);
     await db.workspaces.delete(workspaceId);
+    removed.add(workspaceId);
+    await clearActivePointers(removed);
   });
+}
+
+/**
+ * Removes the "last opened" workspace and manuscript settings when they point at
+ * something just deleted, so no setting is left naming a missing row (F16).
+ * Must run inside a transaction that covers db.settings.
+ */
+async function clearActivePointers(removed: Set<Id>): Promise<void> {
+  for (const key of ["activeWorkspaceId", "activeManuscriptId"]) {
+    const row = await db.settings.get(key);
+    if (row && removed.has(row.value as Id)) await db.settings.delete(key);
+  }
 }
 
 /** Every table that holds a manuscript or rows belonging to one. */
@@ -579,10 +598,10 @@ function manuscriptTables() {
  * The body of deleteManuscript. It must run inside a transaction over manuscriptTables(),
  * so a series, its books and their translations are removed together or not at all.
  */
-async function removeManuscript(manuscriptId: Id): Promise<void> {
+async function removeManuscript(manuscriptId: Id, removed: Set<Id>): Promise<void> {
   const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
   const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
-  for (const childId of [...children, ...translations]) await removeManuscript(childId);
+  for (const childId of [...children, ...translations]) await removeManuscript(childId, removed);
   // A book already removed through another path (a series book that is also a translation) is skipped.
   if (!(await db.manuscripts.get(manuscriptId))) return;
   await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
@@ -596,6 +615,7 @@ async function removeManuscript(manuscriptId: Id): Promise<void> {
   await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
   await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
   await db.manuscripts.delete(manuscriptId);
+  removed.add(manuscriptId);
 }
 
 /** Delete a chapter with its revisions and suggestions, and unlink it from the outline. */

@@ -134,7 +134,8 @@ export async function readBackup(file: File): Promise<BackupFile> {
 /** What a backup holds, in counts, for the author to check before it replaces their data. */
 export function summarizeBackup(backup: BackupFile): BackupSummary {
   const count = (name: string) => backup.tables[name]?.length ?? 0;
-  const known = new Set(["workspaces", "manuscripts", "chapters"]);
+  // Settings are left out here as in summarizeCurrent, so the two counts compare like with like (F17).
+  const known = new Set(["workspaces", "manuscripts", "chapters", "settings"]);
   const otherRows = Object.entries(backup.tables)
     .filter(([name]) => !known.has(name) && !LOCAL_ONLY_TABLES.has(name))
     .reduce((sum, [, rows]) => sum + rows.length, 0);

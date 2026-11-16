@@ -16,7 +16,7 @@ describe("parseJson", () => {
   it.each(["", "no json here", '[{"a":1}', '[{"a": 1,]'])("rejects %j with a user-facing error", (reply) => {
     expect(() => parseJson(reply, "[")).toThrow(/expected format/);
   });
-  it.fails("BUG-parsejson-brackets: a bracketed aside in prose before the array breaks parsing", () => {
+  it("F18: a bracketed aside in prose before the array still parses", () => {
     expect(parseJson('[Note] here you go: [{"a":1}]', "[")).toEqual([{ a: 1 }]);
   });
 });

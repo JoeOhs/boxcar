@@ -170,6 +170,46 @@ function textBlocks(doc: Document): Element[] {
   );
 }
 
+/** One request-sized piece of a block's HTML, and what joined it to the next piece in the original. */
+interface Piece {
+  item: number;
+  html: string;
+  /** " " when the original had a space after this piece, "" when the cut was mid-word. */
+  joiner: string;
+}
+
+/** True when position `i` of `html` is inside a tag such as <em class="x">. */
+function insideTag(html: string, i: number): boolean {
+  return html.lastIndexOf("<", i) > html.lastIndexOf(">", i);
+}
+
+/**
+ * Splits one block's HTML into pieces under `limit` characters (F20): at a sentence end
+ * where it can, else at a space, never inside a tag. A tag that opens in one piece and
+ * closes in another is fine: the pieces are joined again before the HTML is read.
+ */
+export function splitLongBlock(html: string, limit: number): { html: string; joiner: string }[] {
+  const pieces: { html: string; joiner: string }[] = [];
+  let rest = html;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    let cut = -1;
+    for (let i = window.length - 2; i > 0 && cut === -1; i--) {
+      if (".!?".includes(window[i]) && window[i + 1] === " " && !insideTag(window, i)) cut = i + 1;
+    }
+    for (let i = window.length - 1; i > 0 && cut === -1; i--) {
+      if (window[i] === " " && !insideTag(window, i)) cut = i;
+    }
+    if (cut === -1) cut = insideTag(window, limit - 1) ? window.lastIndexOf("<") : limit;
+    if (cut <= 0) cut = limit;
+    const spaced = rest[cut] === " ";
+    pieces.push({ html: rest.slice(0, cut), joiner: spaced ? " " : "" });
+    rest = spaced ? rest.slice(cut + 1) : rest.slice(cut);
+  }
+  pieces.push({ html: rest, joiner: "" });
+  return pieces;
+}
+
 /** Splits the strings into batches that each stay under the size limit. */
 function batchesOf(items: string[]): string[][] {
   const batches: string[][] = [];
@@ -227,11 +267,19 @@ export async function translateChapter(
   for (const block of blocks) items.push(block.innerHTML);
   if (items.length === 0) throw new Error("This chapter has no text to translate yet.");
 
-  const translated: string[] = [];
-  for (const batch of batchesOf(items)) {
+  // A block longer than one request is split into pieces, translated, and joined again.
+  const pieces: Piece[] = items.flatMap((html, item) =>
+    splitLongBlock(html, BATCH_CHARACTERS).map((piece) => ({ item, ...piece })),
+  );
+  const translatedPieces: string[] = [];
+  for (const batch of batchesOf(pieces.map((p) => p.html))) {
     // Batches run one after another, so the chapter is never sent as one long request.
-    translated.push(...(await translateBatch(settings, batch, target)));
+    translatedPieces.push(...(await translateBatch(settings, batch, target)));
   }
+  const translated: string[] = items.map(() => "");
+  pieces.forEach((piece, i) => {
+    translated[piece.item] += translatedPieces[i].trim() + piece.joiner;
+  });
 
   let cursor = 0;
   let title = "";
