@@ -13,6 +13,7 @@ import {
   moveSceneToChapter,
   saveChapter,
 } from "@/lib/store";
+import { clearRecoveryCopy, saveRecoveryCopy } from "@/lib/draftRecovery";
 import { htmlSpeech } from "@/lib/narration";
 import { escapeHtml, textToParagraphs } from "@/lib/text";
 import { cn } from "@/lib/utils";
@@ -63,7 +64,11 @@ function useChapterDraft(chapter: Chapter) {
     window.clearTimeout(timer.current);
     timer.current = undefined;
     const { title: t, scenes: s } = latest.current;
-    return saveChapter(chapterId, { title: t, content: serializeScenes(s) }).then(() => setSaved(true));
+    return saveChapter(chapterId, { title: t, content: serializeScenes(s) }).then(() => {
+      // Safely in the database: any copy made while the window was closing is no longer needed.
+      clearRecoveryCopy(chapterId);
+      setSaved(true);
+    });
   }, [chapterId]);
 
   const commit = useCallback(
@@ -80,15 +85,22 @@ function useChapterDraft(chapter: Chapter) {
 
   useEffect(() => {
     const onLeave = () => {
-      if (timer.current !== undefined) void flush();
+      if (timer.current === undefined) return;
+      // The database save below is asynchronous and the closing page may not wait for it,
+      // so keep a synchronous copy first; the next start restores it if needed.
+      const { title: t, scenes: s } = latest.current;
+      saveRecoveryCopy(chapterId, t, serializeScenes(s));
+      void flush();
     };
     window.addEventListener("beforeunload", onLeave);
+    window.addEventListener("pagehide", onLeave);
     return () => {
       window.removeEventListener("beforeunload", onLeave);
+      window.removeEventListener("pagehide", onLeave);
       // Leaving the chapter (or the screen) must never lose the last keystrokes.
       if (timer.current !== undefined) void flush();
     };
-  }, [flush]);
+  }, [flush, chapterId]);
 
   const focusScene = useCallback((id: Id) => {
     window.setTimeout(() => {
