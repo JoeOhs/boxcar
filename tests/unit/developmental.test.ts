@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { db, type AiSettings } from "@/db/schema";
 import { CHAPTER_PART_CHARACTERS, requestStageReview } from "@/lib/ai";
 import { SUMMARY_BRIEF_FICTION, SUMMARY_BRIEF_NONFICTION } from "@/lib/chapterSummary";
-import { runDevelopmentalReview } from "@/lib/developmentalReview";
+import { DEVELOPMENTAL_AGENTS, runDevelopmentalReview, type DevelopmentalProgress } from "@/lib/developmentalReview";
 import { saveChapter } from "@/lib/store";
 import { chapter, mockFetch, openAiReply, seedBook, type Call } from "./helpers";
 
@@ -120,5 +120,29 @@ describe("line, copy and proofreading passes read every word", () => {
     expect(calls.length).toBeGreaterThan(1);
     expect(sent).toContain("FINAL-SENTENCE");
     expect(sent).toContain("word2999");
+  });
+});
+
+describe("developmental progress bar", () => {
+  it("reports steadily rising progress with a couple of words for each step", async () => {
+    const { m } = await seedBook();
+    await chapter(m, "<p>One.</p>", "chapter", "Alpha");
+    await chapter(m, "<p>Two.</p>", "chapter", "Beta");
+    fakeAi();
+    const seen: DevelopmentalProgress[] = [];
+
+    await runDevelopmentalReview(m, S, (p) => seen.push(p));
+
+    // Two chapter summaries, then the four editors.
+    expect(seen.map((p) => p.label)).toEqual([
+      "Reading chapter 1 of 2",
+      "Reading chapter 2 of 2",
+      ...DEVELOPMENTAL_AGENTS.map((a) => a.thinking),
+    ]);
+    const fractions = seen.map((p) => p.fraction);
+    expect(fractions[0]).toBe(0);
+    for (let i = 1; i < fractions.length; i++) expect(fractions[i]).toBeGreaterThan(fractions[i - 1]);
+    expect(fractions[fractions.length - 1]).toBeLessThan(1);
+    for (const label of seen.map((p) => p.label)) expect(label.split(" ").length).toBeLessThanOrEqual(5);
   });
 });

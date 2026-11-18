@@ -26,7 +26,7 @@ import {
 } from "@/lib/editing";
 import { buildDraftDocx } from "@/lib/docx";
 import { downloadBlob, fileSafeName } from "@/lib/download";
-import { DEVELOPMENTAL_AGENTS, runDevelopmentalReview, summarisedBigPicture } from "@/lib/developmentalReview";
+import { DEVELOPMENTAL_AGENTS, runDevelopmentalReview, summarisedBigPicture, type DevelopmentalProgress } from "@/lib/developmentalReview";
 import { exportStageReport, REPORT_TITLE } from "@/lib/reports";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
@@ -111,6 +111,7 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
   const allDone = workflow.completed.length === EDIT_STAGES.length;
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [progress, setProgress] = useState<DevelopmentalProgress | null>(null);
 
   /**
    * Finishing the developmental pass runs the four developmental editors over the whole
@@ -128,10 +129,10 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
     }
     setBusy(true);
     setNote(null);
+    setProgress({ fraction: 0, label: "Opening the manuscript" });
     try {
-      const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"), (text) =>
-        setNote({ ok: true, text }),
-      );
+      const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"), setProgress);
+      setProgress(null);
       await completeStage(manuscript, "developmental");
       // The report takes over the space as soon as the pass is finished.
       onDevelopmentalComplete();
@@ -146,6 +147,7 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
     } catch (e) {
       setNote({ ok: false, text: e instanceof Error ? e.message : "The developmental pass could not be run. Nothing was changed." });
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   }
@@ -228,7 +230,32 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
           ) : null}
         </div>
       </div>
+      {progress ? <EditorsProgress progress={progress} /> : null}
       {note ? <p className={cn("text-sm", note.ok ? "text-success" : "text-destructive")}>{note.text}</p> : null}
+    </div>
+  );
+}
+
+/** The bar shown while the developmental editors work: how far along, and a couple of words on what they are doing. */
+function EditorsProgress({ progress }: { progress: DevelopmentalProgress }) {
+  const percent = Math.round(Math.min(1, Math.max(0, progress.fraction)) * 100);
+  return (
+    <div className="max-w-md space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="animate-pulse text-foreground">{progress.label}…</span>
+        <span className="tabular-nums text-muted-foreground">{percent}%</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Developmental editors at work"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${progress.label}, ${percent}%`}
+        className="h-1.5 overflow-hidden rounded-full bg-muted"
+      >
+        <div className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out" style={{ width: `${percent}%` }} />
+      </div>
     </div>
   );
 }

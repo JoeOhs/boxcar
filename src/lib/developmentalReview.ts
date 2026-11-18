@@ -22,11 +22,20 @@ export interface DevelopmentalAgent {
   persona: string;
   /** What the AI is asked to look for in the whole book. */
   task: string;
+  /** A couple of words shown on the progress bar while this editor reads, e.g. "Tracing the plot". */
+  thinking: string;
+}
+
+/** Where the developmental pass is up to: how far along (0 to 1) and a couple of words on what is happening. */
+export interface DevelopmentalProgress {
+  fraction: number;
+  label: string;
 }
 
 export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   {
     id: "structure",
+    thinking: "Tracing the plot",
     name: "Story structure editor",
     persona:
       "You are the story structure editor at a small publishing house. You look at the shape of the whole book: the plot, the narrative arc from the opening to the resolution, the turning points and whether each part of the structure earns its place. For non-fiction you look at the shape of the argument instead. You do not comment on sentences.",
@@ -34,6 +43,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "character",
+    thinking: "Getting to know the cast",
     name: "Character editor",
     persona:
       "You are the character editor at a small publishing house. You check that each character behaves consistently with who they are, that their motives are clear and that their arcs develop. You also check continuity of what characters know, where they are and what they have been told. You do not comment on sentences.",
@@ -41,6 +51,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "pacing",
+    thinking: "Feeling the rhythm",
     name: "Pacing editor",
     persona:
       "You are the pacing editor at a small publishing house. You judge how fast the book moves: where tension rises and sags, whether scenes run too long or too short, and whether the order of scenes makes the reader want to keep going. You do not comment on sentences.",
@@ -48,6 +59,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "organization",
+    thinking: "Checking loose threads",
     name: "Organisation editor",
     persona:
       "You are the organisation editor at a small publishing house. You check how the whole book is put together: that the promises made early are kept, that subplots and threads are closed or deliberately left open, that chapters are in the best order, and that the book is complete. For non-fiction you check that the argument is ordered so that each chapter builds on the one before. You do not comment on sentences.",
@@ -136,23 +148,27 @@ export interface DevelopmentalResult {
 export async function runDevelopmentalReview(
   manuscript: Manuscript,
   settings: AiSettings,
-  onProgress?: (message: string) => void,
+  onProgress?: (progress: DevelopmentalProgress) => void,
 ): Promise<DevelopmentalResult> {
   const loaded = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
   if (!loaded.some((c) => htmlToText(c.content).trim())) {
     throw new Error("Write at least one chapter before the developmental pass.");
   }
-  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total, chapter) =>
-    onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
-  );
+  // The bar moves one step per chapter that needs a fresh summary, then one step per editor.
+  const editors = DEVELOPMENTAL_AGENTS.length;
+  let summarySteps = 0;
+  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total) => {
+    summarySteps = total;
+    onProgress?.({ fraction: done / (total + editors), label: `Reading chapter ${done + 1} of ${total}` });
+  });
   // No cap: summaries keep the book small, and cutting it would hide chapters from the editors.
   const context = await bigPicture(manuscript, chapters);
   const found: Suggestion[] = [];
   const perAgent: DevelopmentalResult["perAgent"] = [];
   const now = Date.now();
 
-  for (const agent of DEVELOPMENTAL_AGENTS) {
-    onProgress?.(`The ${agent.name.toLowerCase()} is reading the book…`);
+  for (const [index, agent] of DEVELOPMENTAL_AGENTS.entries()) {
+    onProgress?.({ fraction: (summarySteps + index) / (summarySteps + editors), label: agent.thinking });
     const prompt =
       `${agent.task}\n\n` +
       `Reply with ONLY a JSON array (no prose, no code fences) of at most 6 objects with the keys "chapter" and "comment". ` +
