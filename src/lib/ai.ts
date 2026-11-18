@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { type AgentRole, type AiSettings, type EditStage, type SuggestionKind } from "@/db/schema";
 import { stageInfo } from "./editing";
-import { OLLAMA_CLOUD_URL, providerNeedsKey, normalizeServerUrl } from "./providers";
+import { ollamaCloudBaseUrl, providerNeedsKey, normalizeServerUrl } from "./providers";
 import { getAiSettings } from "./keyVault";
 import { fetchWithTimeout, RequestTimeoutError } from "./request";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
@@ -83,7 +83,7 @@ function openAiStyleEndpoint(settings: AiSettings): { url: string; headers: Reco
   }
   headers.Authorization = `Bearer ${settings.apiKey.trim()}`;
   if (settings.provider === "ollama-cloud") {
-    return { url: `${OLLAMA_CLOUD_URL}/v1/chat/completions`, headers };
+    return { url: `${ollamaCloudBaseUrl(window.location)}/v1/chat/completions`, headers };
   }
   return {
     url: settings.provider === "huggingface" ? HUGGING_FACE_CHAT_URL : "https://api.openai.com/v1/chat/completions",

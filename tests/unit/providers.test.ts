@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { AiProvider, EditStage } from "@/db/schema";
-import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL, MODEL_SUGGESTIONS, OLLAMA_CLOUD_MODELS } from "@/lib/providers";
+import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL, MODEL_SUGGESTIONS, OLLAMA_CLOUD_MODELS, ollamaCloudBaseUrl } from "@/lib/providers";
 
 const PROVIDERS = Object.keys(DEFAULT_MODEL) as AiProvider[];
+
+describe("Ollama Cloud address (no CORS on ollama.com)", () => {
+  const at = (href: string) => {
+    const u = new URL(href);
+    return ollamaCloudBaseUrl({ protocol: u.protocol, host: u.host, hostname: u.hostname });
+  };
+  it("the desktop app forwards through its own app:// address", () => {
+    expect(at("app://local/")).toBe("app://local/__ollama-cloud");
+  });
+  it("the dev and preview servers on this computer forward too", () => {
+    expect(at("http://localhost:5173/")).toBe("http://localhost:5173/__ollama-cloud");
+    expect(at("http://127.0.0.1:5299/")).toBe("http://127.0.0.1:5299/__ollama-cloud");
+  });
+  it("anywhere else it calls ollama.com directly", () => {
+    expect(at("https://boxcar.example.com/")).toBe("https://ollama.com");
+  });
+});
 
 describe("model lists", () => {
   it("every provider's default model is one the dropdown offers", () => {

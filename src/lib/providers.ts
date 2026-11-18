@@ -107,6 +107,27 @@ export const OLLAMA_DEFAULT_URL = "http://localhost:11434";
 /** Ollama Cloud API endpoint for hosted inference. Get a key at ollama.com. */
 export const OLLAMA_CLOUD_URL = "https://ollama.com";
 
+/**
+ * The path on the app's own address that forwards to Ollama Cloud. ollama.com sends no
+ * CORS headers, so a web page cannot call it directly: the browser blocks the request.
+ * A request to the app's own address needs no CORS check, and the desktop app
+ * (ganger-release/main.js) and the Vite dev/preview servers (vite.config.ts) forward
+ * this path to https://ollama.com.
+ */
+export const OLLAMA_CLOUD_PROXY_PATH = "/__ollama-cloud";
+
+/**
+ * Where to send Ollama Cloud requests from a page at `location`: through the forwarding
+ * path in the desktop app (app://) and on this computer's dev servers, which provide it;
+ * straight to ollama.com anywhere else (where the browser will block it, as before).
+ */
+export function ollamaCloudBaseUrl(location: Pick<Location, "protocol" | "host" | "hostname">): string {
+  const forwarded =
+    location.protocol === "app:" ||
+    (/^https?:$/.test(location.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname));
+  return forwarded ? `${location.protocol}//${location.host}${OLLAMA_CLOUD_PROXY_PATH}` : OLLAMA_CLOUD_URL;
+}
+
 /** Ollama runs on the author's own computer and takes no key. */
 export function providerNeedsKey(provider: string): boolean {
   return provider !== "ollama";

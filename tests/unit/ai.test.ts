@@ -45,7 +45,8 @@ describe("provider requests", () => {
     expect(calls.map((c) => c.url)).toEqual([
       "https://router.huggingface.co/v1/chat/completions",
       "http://localhost:11434/v1/chat/completions",
-      "https://ollama.com/v1/chat/completions",
+      // Tests run on a localhost page, so Ollama Cloud goes through the app's forwarding path.
+      `${window.location.protocol}//${window.location.host}/__ollama-cloud/v1/chat/completions`,
     ]);
     expect((calls[1].init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
