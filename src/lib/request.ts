@@ -34,3 +34,71 @@ export async function fetchWithTimeout(
     clearTimeout(timer);
   }
 }
+
+/**
+ * How long a streamed AI reply may go completely silent before it is given up. Reasoning
+ * models can think for minutes before their first word, so this is generous; a reply that
+ * keeps arriving is never cut off by it.
+ */
+export const STREAM_SILENCE_MS = 300_000;
+
+/** The longest any streamed reply may take in total, so a reply that trickles forever still ends. */
+export const STREAM_TOTAL_MS = 30 * 60_000;
+
+/** Thrown when a streamed reply went silent for too long, or ran past the total limit. */
+export class StreamTimeoutError extends RequestTimeoutError {
+  constructor(what: string, total: boolean) {
+    super(what);
+    this.message = total
+      ? `${what} was still writing after ${Math.round(STREAM_TOTAL_MS / 60_000)} minutes, so the request was stopped. Try again, or pick a faster model.`
+      : `${what} sent nothing for ${Math.round(STREAM_SILENCE_MS / 60_000)} minutes. Try again, or pick a faster model.`;
+  }
+}
+
+/**
+ * fetch for a streamed reply. Unlike fetchWithTimeout, the clock restarts every time a piece
+ * of the reply arrives, so a slow model that is still writing is never cut off; only silence
+ * (or the total limit) ends it. Returns the whole body as text.
+ */
+export async function fetchStreamText(
+  what: string,
+  url: string,
+  init: RequestInit,
+  silenceMs = STREAM_SILENCE_MS,
+  totalMs = STREAM_TOTAL_MS,
+): Promise<{ response: Response; text: string }> {
+  const controller = new AbortController();
+  let reason: "silence" | "total" | null = null;
+  let silence = setTimeout(() => stop("silence"), silenceMs);
+  const total = setTimeout(() => stop("total"), totalMs);
+  function stop(why: "silence" | "total") {
+    reason = why;
+    controller.abort();
+  }
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    let text = "";
+    if (response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        // Something arrived: the provider is still working, so the silence clock starts again.
+        clearTimeout(silence);
+        silence = setTimeout(() => stop("silence"), silenceMs);
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    } else {
+      text = await response.text();
+    }
+    return { response, text };
+  } catch (e) {
+    if (reason) throw new StreamTimeoutError(what, reason === "total");
+    throw e;
+  } finally {
+    clearTimeout(silence);
+    clearTimeout(total);
+  }
+}

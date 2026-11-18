@@ -27,7 +27,7 @@ describe("provider requests", () => {
     expect(await askAi(S("openai"), "sys", [{ role: "user", content: "u" }])).toBe("hi");
     expect(calls[0].url).toBe("https://api.openai.com/v1/chat/completions");
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe("Bearer test-key-0000");
-    expect(calls[0].body).toEqual({ model: "m-1", messages: [{ role: "system", content: "sys" }, { role: "user", content: "u" }] });
+    expect(calls[0].body).toEqual({ model: "m-1", stream: true, messages: [{ role: "system", content: "sys" }, { role: "user", content: "u" }] });
   });
   it("Anthropic: x-api-key, version header, system as top-level field", async () => {
     const calls = mockFetch(json({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] }));
@@ -35,7 +35,7 @@ describe("provider requests", () => {
     const h = calls[0].init.headers as Record<string, string>;
     expect(calls[0].url).toBe("https://api.anthropic.com/v1/messages");
     expect([h["x-api-key"], h["anthropic-version"], h["anthropic-dangerous-direct-browser-access"]]).toEqual(["test-key-0000", "2023-06-01", "true"]);
-    expect(calls[0].body).toMatchObject({ model: "m-1", system: "sys", max_tokens: 4096, messages: [{ role: "user", content: "u" }] });
+    expect(calls[0].body).toMatchObject({ model: "m-1", system: "sys", max_tokens: 4096, stream: true, messages: [{ role: "user", content: "u" }] });
   });
   it("Hugging Face router, Ollama (no key), Ollama Cloud URLs", async () => {
     const calls = mockFetch(openAiReply("ok"));
@@ -71,17 +71,82 @@ describe("provider requests", () => {
     await expect(askAi(S("openai", { apiKey: "  " }), "s", [])).rejects.toThrow(/Add your AI key/);
     expect(calls).toHaveLength(0);
   });
-  it("F01: a request that never answers times out with a clear message", async () => {
+  it("F01: a request that never answers is given up after 5 minutes of silence", async () => {
     vi.useFakeTimers();
-    // Like real fetch, the mock rejects when its signal is aborted.
-    vi.stubGlobal("fetch", vi.fn((_u: string, init: RequestInit) => new Promise((_r, reject) => {
-      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-    })));
-    const pending = askAi(S("openai"), "s", []);
-    const check = expect(pending).rejects.toThrow(/did not answer within 120 seconds/);
-    await vi.advanceTimersByTimeAsync(120_000);
-    await check;
-    vi.useRealTimers();
+    try {
+      // Like real fetch, the mock rejects when its signal is aborted.
+      vi.stubGlobal("fetch", vi.fn((_u: string, init: RequestInit) => new Promise((_r, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      })));
+      const pending = askAi(S("openai"), "s", []);
+      const check = expect(pending).rejects.toThrow(/sent nothing for 5 minutes/);
+      await vi.advanceTimersByTimeAsync(300_000);
+      await check;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/** A streamed reply ("data: {...}" lines), as the providers send it with stream: true. */
+const sse = (...events: (object | string)[]) =>
+  new Response(events.map((e) => `data: ${typeof e === "string" ? e : JSON.stringify(e)}
+
+`).join(""), {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+
+describe("streamed replies (slow models are not cut off)", () => {
+  it("OpenAI-style pieces are joined; reasoning pieces are left out", async () => {
+    mockFetch(sse(
+      { choices: [{ delta: { role: "assistant" } }] },
+      { choices: [{ delta: { reasoning: "thinking..." } }] },
+      { choices: [{ delta: { content: "Hel" } }] },
+      { choices: [{ delta: { content: "lo" } }] },
+      "[DONE]",
+    ));
+    expect(await askAi(S("ollama-cloud"), "s", [])).toBe("Hello");
+  });
+  it("Anthropic pieces are joined", async () => {
+    mockFetch(sse(
+      { type: "message_start" },
+      { type: "ping" },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "a " } },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "b" } },
+      { type: "message_stop" },
+    ));
+    expect(await askAi(S("anthropic"), "s", [])).toBe("a b");
+  });
+  it("a provider that fails partway shows its error, not half a reply", async () => {
+    mockFetch(sse({ choices: [{ delta: { content: "Half" } }] }, { error: { message: "Model overloaded" } }));
+    await expect(askAi(S("openai"), "s", [])).rejects.toThrow("Model overloaded");
+    mockFetch(sse({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }));
+    await expect(askAi(S("anthropic"), "s", [])).rejects.toThrow("Overloaded");
+  });
+  it("a reply still arriving after 12 minutes is waited for (the old limit was 2 minutes in total)", async () => {
+    vi.useFakeTimers();
+    try {
+      const encoder = new TextEncoder();
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        let n = 0;
+        const body = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            // One piece every 4 minutes: long pauses, but never 5 minutes of silence.
+            await new Promise((r) => setTimeout(r, 240_000));
+            if (++n > 3) return controller.close();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: String(n) } }] })}
+
+`));
+          },
+        });
+        return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+      }));
+      const pending = askAi(S("openai"), "s", []);
+      await vi.advanceTimersByTimeAsync(16 * 60_000);
+      expect(await pending).toBe("123");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

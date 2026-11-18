@@ -3,7 +3,7 @@ import { type AgentRole, type AiSettings, type EditStage, type SuggestionKind } 
 import { stageInfo } from "./editing";
 import { ollamaCloudBaseUrl, providerNeedsKey, normalizeServerUrl } from "./providers";
 import { getAiSettings } from "./keyVault";
-import { fetchWithTimeout, RequestTimeoutError } from "./request";
+import { fetchStreamText, RequestTimeoutError } from "./request";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
@@ -101,10 +101,13 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
     throw new Error("Add your AI key in Settings first.");
   }
 
-  let response: Response;
+  const what = local ? "Ollama" : "The AI provider";
+  let reply: { response: Response; text: string };
   try {
+    // Every reply is streamed, so a slow model that is still writing is never cut off;
+    // only a provider that goes silent is given up on (STREAM_SILENCE_MS).
     if (settings.provider === "anthropic") {
-      response = await fetchWithTimeout("The AI provider", "https://api.anthropic.com/v1/messages", {
+      reply = await fetchStreamText(what, "https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -115,17 +118,19 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
         body: JSON.stringify({
           model: settings.model,
           max_tokens: 4096,
+          stream: true,
           system,
           messages: turns,
         }),
       });
     } else {
       const { url, headers } = openAiStyleEndpoint(settings);
-      response = await fetchWithTimeout(local ? "Ollama" : "The AI provider", url, {
+      reply = await fetchStreamText(what, url, {
         method: "POST",
         headers,
         body: JSON.stringify({
           model: settings.model,
+          stream: true,
           messages: [{ role: "system", content: system }, ...turns],
         }),
       });
@@ -139,22 +144,68 @@ export async function askAi(settings: AiSettings, system: string, turns: ChatTur
     );
   }
 
-  if (settings.provider !== "anthropic") {
-    const body = (await response.json().catch(() => null)) as OpenAiBody | null;
-    if (!response.ok) throw new Error(errorText(body, response.status, response.statusText));
-    const text = body?.choices?.[0]?.message?.content;
-    if (!text) throw new Error("The AI provider sent back an empty reply.");
-    return text.trim();
-  }
+  const { response, text: raw } = reply;
+  if (!response.ok) throw new Error(errorText(parseBody(raw), response.status, response.statusText));
+  const text = isEventStream(response, raw) ? textFromStream(settings, raw) : textFromWholeReply(settings, parseBody(raw));
+  if (!text.trim()) throw new Error("The AI provider sent back an empty reply.");
+  return text.trim();
+}
 
-  const body = (await response.json().catch(() => null)) as AnthropicBody | null;
-  if (!response.ok) throw new Error(errorText(body, response.status, response.statusText));
-  const text = (body?.content ?? [])
+function parseBody(raw: string): (OpenAiBody & AnthropicBody) | null {
+  try {
+    return JSON.parse(raw) as OpenAiBody & AnthropicBody;
+  } catch {
+    return null;
+  }
+}
+
+/** A provider may ignore `stream: true` and send the whole reply at once; both are accepted. */
+function isEventStream(response: Response, raw: string): boolean {
+  return (response.headers.get("Content-Type") ?? "").includes("text/event-stream") || /^\s*(data|event):/.test(raw);
+}
+
+function textFromWholeReply(settings: AiSettings, body: (OpenAiBody & AnthropicBody) | null): string {
+  if (settings.provider !== "anthropic") return body?.choices?.[0]?.message?.content ?? "";
+  return (body?.content ?? [])
     .filter((part) => part.type === "text" && part.text)
     .map((part) => part.text)
     .join("\n");
-  if (!text) throw new Error("The AI provider sent back an empty reply.");
-  return text.trim();
+}
+
+interface StreamEvent extends ApiErrorBody {
+  /** OpenAI-style providers: each piece of the reply. Reasoning pieces are ignored. */
+  choices?: { delta?: { content?: string | null } }[];
+  /** Anthropic: "content_block_delta" carries text; "error" carries a failure. */
+  type?: string;
+  delta?: { type?: string; text?: string };
+}
+
+/**
+ * Joins the pieces of a streamed reply ("data: {...}" lines). A provider that fails partway
+ * sends an error event instead of more text; that is shown rather than a half reply.
+ */
+function textFromStream(settings: AiSettings, raw: string): string {
+  let text = "";
+  for (const line of raw.split("\n")) {
+    const data = line.startsWith("data:") ? line.slice(5).trim() : "";
+    if (!data || data === "[DONE]") continue;
+    let event: StreamEvent;
+    try {
+      event = JSON.parse(data) as StreamEvent;
+    } catch {
+      continue;
+    }
+    if (event.error || event.type === "error") {
+      const message = typeof event.error === "string" ? event.error : event.error?.message;
+      throw new Error(message || "The AI provider stopped with an error partway through. Try again.");
+    }
+    if (settings.provider === "anthropic") {
+      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") text += event.delta.text ?? "";
+    } else {
+      text += event.choices?.[0]?.delta?.content ?? "";
+    }
+  }
+  return text;
 }
 /** System prompt for a role, with optional manuscript context appended. `persona` replaces the role's usual brief. */
 export function systemPrompt(role: AgentRole, context: string, persona?: string): string {
