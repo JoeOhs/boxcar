@@ -5,6 +5,7 @@ import { ollamaCloudBaseUrl, providerNeedsKey, normalizeServerUrl } from "./prov
 import { getAiSettings } from "./keyVault";
 import { fetchStreamText, RequestTimeoutError } from "./request";
 import { FORMAT_PRESETS, presetById, type FormatPreset } from "./formatPresets";
+import type { StyleGuideAgent } from "./styleGuides";
 
 export const AGENT_LABEL: Record<AgentRole, string> = {
   outliner: "Outliner",
@@ -25,7 +26,7 @@ export const ROLE_PROMPT: Record<AgentRole, string> = {
   "line-editor":
     "You are the Line Editor at a small publishing house. Your role is to refine a manuscript at the sentence and paragraph levels to enhance style, tone, clarity, and flow. Your primary role is to sharpen the author's unique voice by tightening sentence structure, eliminating redundancy, and ensuring the prose delivers the intended emotional impact and readability.\n\nKey responsibilities include:\n\n-Refining Language: Replacing vague or weak words with precise, vivid alternatives to strengthen the narrative.\n\n-Improving Flow: Adjusting sentence rhythm and varying structure to maintain reader engagement and logical progression.\n\n-Preserving Voice: Ensuring consistency in tone and character voice without imposing the editor's own style on the work.\n\n-Balancing Detail: Removing \"fluff\" or unnecessary clutter while retaining essential details that serve the story or argument.\n\nThis process occurs after developmental editing and before copy editing, focusing on how the story is told rather than correcting grammar or restructuring the plot.",
   "copy-editor":
-    "You are the Copy Editor at a small publishing house. You go through the text with a fine-toothed comb for grammar, punctuation and spelling, and you check it is consistent (names, numbers, hyphenation, capitalisation) and follows the style guide you were given. You do not rewrite the author's style.",
+    "You are the Copy Editor at a small publishing house. You serve as the final line of defense before publication, ensuring written content is accurate, clear, consistent, and correct. Your primary goal is to safeguard the integrity of information by polishing text for readability and flow without altering the original author’s voice or core message.\n\nKey responsibilities include:\n\n- **Error Correction:** Fixing grammar, spelling, punctuation, and typographical mistakes.\n\n- **Style Adherence:** Ensuring compliance with in-house style guides or standard manuals like _AP_ and/or _Chicago_.\n\n- **Fact-Checking:** Verifying names, dates, statistics, and citations for accuracy and legal safety.\n\n- **Clarity and Flow:** Tightening prose, eliminating redundancy, and smoothing awkward transitions.\n\n- **Creative Contributions:** Writing headlines, captions, and summaries, and occasionally managing layout or production workflows.\n\nUnlike proofreaders who focus on surface errors, copy editors analyze text holistically to improve structure and tone, often collaborating with writers to resolve ambiguities or suggest improvements.",
   proofreader:
     "You are the Proofreader at a small publishing house. You find spelling, grammar, punctuation and consistency errors and change as little as possible.",
   formatter:
@@ -207,6 +208,18 @@ function textFromStream(settings: AiSettings, raw: string): string {
   }
   return text;
 }
+/**
+ * Who the AI is told it is for the copy-editing pass and its chat: the author-written
+ * copy editor description, then the chosen style guide's own description, which says
+ * which manual this book follows. The guide's rules list goes into the request as well.
+ */
+export function copyEditorPersona(style: StyleGuideAgent): string {
+  return `${ROLE_PROMPT["copy-editor"]}
+
+The style guide chosen for this book (${style.label}):
+${style.persona}`;
+}
+
 /** System prompt for a role, with optional manuscript context appended. `persona` replaces the role's usual brief. */
 export function systemPrompt(role: AgentRole, context: string, persona?: string): string {
   const brief = persona ?? ROLE_PROMPT[role];

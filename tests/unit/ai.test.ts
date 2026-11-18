@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettings } from "@/db/schema";
-import { askAi, chapterParts, parseJson, requestFormatPreset, requestStageReview } from "@/lib/ai";
+import { askAi, chapterParts, copyEditorPersona, parseJson, requestFormatPreset, requestStageReview, ROLE_PROMPT } from "@/lib/ai";
+import { STYLE_GUIDE_AGENTS } from "@/lib/styleGuides";
 import { replaceInHtml } from "@/lib/text";
 import { json, mockFetch, openAiReply } from "./helpers";
 
@@ -236,5 +237,19 @@ describe("applying a suggestion (replaceInHtml)", () => {
   it("F04: text in scene sections and bare text are both reachable", () => {
     expect(html(replaceInHtml('<section data-segment="a"><p>Teh end.</p></section>', "Teh", "The"))).toBe('<section data-segment="a"><p>The end.</p></section>');
     expect(html(replaceInHtml("Loose teh text", "teh", "the"))).toBe("Loose the text");
+  });
+});
+
+describe("copy editor persona", () => {
+  it("the copy pass gets the author's copy editor description plus the chosen style guide", async () => {
+    const chicago = STYLE_GUIDE_AGENTS.find((s) => /Chicago/.test(s.label))!;
+    const persona = copyEditorPersona(chicago);
+    expect(persona.startsWith(ROLE_PROMPT["copy-editor"])).toBe(true);
+    expect(persona).toContain("final line of defense before publication");
+    expect(persona).toContain(chicago.persona);
+
+    const calls = mockFetch(openAiReply("[]"));
+    await requestStageReview(S("openai"), "copy", "Some text.", "", chicago.rules, persona);
+    expect(calls[0].body.messages[0]).toEqual({ role: "system", content: persona });
   });
 });

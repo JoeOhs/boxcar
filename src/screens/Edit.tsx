@@ -9,7 +9,7 @@ import {
   type Manuscript,
   type Suggestion,
 } from "@/db/schema";
-import { aiReachable, AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
+import { aiReachable, AGENT_LABEL, copyEditorPersona, requestStageReview, useAiSettings } from "@/lib/ai";
 import { chapterLabel, numberChapters } from "@/lib/chapters";
 import {
   completeStage,
@@ -531,7 +531,7 @@ function SuggestionsPanel({
         htmlToText(chapter.content),
         context,
         style.rules,
-        stage === "copy" ? style.persona : undefined,
+        stage === "copy" ? copyEditorPersona(style) : undefined,
       );
       const now = Date.now();
       await db.suggestions.bulkAdd(
@@ -997,7 +997,7 @@ function ChapterReview({
               key={`${stage}:${initialQuestion ?? ""}`}
               manuscriptId={manuscript.id}
               role={info.role}
-              persona={stage === "copy" ? styleGuideAgent(workflowOf(manuscript).styleGuide).persona : info.persona}
+              persona={stage === "copy" ? copyEditorPersona(styleGuideAgent(workflowOf(manuscript).styleGuide)) : info.persona}
               model={ai && models ? modelForStage(ai.provider, models, stage, ai.model) : undefined}
               getContext={() =>
                 `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\nThe chapter being edited, "${chapter.title}" (every word):\n${htmlToText(chapter.content)}`
