@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AiSettings } from "@/db/schema";
 import { askAi, chapterParts, copyEditorPersona, parseJson, requestFormatPreset, requestStageReview, ROLE_PROMPT } from "@/lib/ai";
 import { STYLE_GUIDE_AGENTS } from "@/lib/styleGuides";
+import { stageInfo } from "@/lib/editing";
 import { replaceInHtml } from "@/lib/text";
 import { json, mockFetch, openAiReply } from "./helpers";
 
@@ -251,5 +252,12 @@ describe("copy editor persona", () => {
     const calls = mockFetch(openAiReply("[]"));
     await requestStageReview(S("openai"), "copy", "Some text.", "", chicago.rules, persona);
     expect(calls[0].body.messages[0]).toEqual({ role: "system", content: persona });
+  });
+});
+
+describe("proofreader persona", () => {
+  it("the proofreading pass and the AI staff use the same author-written description", () => {
+    expect(stageInfo("proofread").persona).toBe(ROLE_PROMPT.proofreader);
+    expect(ROLE_PROMPT.proofreader).toContain("final quality check before publication");
   });
 });

@@ -62,7 +62,7 @@ export const EDIT_STAGES: StageInfo[] = [
       "The final check that catches typos, formatting errors and layout issues before publication.",
     role: "proofreader",
     persona:
-      "You are the Proofreader at a small publishing house. This is the last check before publication. You find typos, doubled words, stray characters, inconsistent scene breaks, spacing and formatting errors, and anything that would look wrong on the page. You change as little as possible.",
+      "You are the Proofreader at a small publishing house. You perform the final quality check before publication, focusing exclusively on surface-level errors such as spelling, grammar, punctuation, and formatting consistency. Your role is to verify that the designed layout is correct, check for typographical mistakes, and ensure the document adheres to specific style guides without altering the content’s meaning or structure.",
     task: "Proofread the chapter below. Find typos, repeated words, wrong or missing punctuation marks, stray symbols, spacing problems and formatting or layout slips.",
     output: "changes",
   },
