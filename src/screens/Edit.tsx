@@ -4,15 +4,12 @@ import { Check, FileDown, FileText, History, Lock, MessageSquare, PenLine, Rotat
 import {
   db,
   newId,
-  saveEditModel,
-  type AiProvider,
   type Chapter,
   type EditStage,
   type Manuscript,
   type Suggestion,
 } from "@/db/schema";
 import { aiReachable, AGENT_LABEL, requestStageReview, useAiSettings } from "@/lib/ai";
-import { MODEL_SUGGESTIONS } from "@/lib/providers";
 import { chapterLabel, numberChapters } from "@/lib/chapters";
 import {
   completeStage,
@@ -39,7 +36,6 @@ import { diffParagraphs, htmlToText, replaceInHtml, textToParagraphs } from "@/l
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
-import { ModelSelect } from "@/components/ModelSelect";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -69,22 +65,20 @@ const QUICK_PROMPTS: Record<EditStage, { label: string; prompt: string }[]> = {
 // The editing workflow: developmental, line, copy, proofreading
 // ---------------------------------------------------------------------------
 
-/** The model the author picked for one pass, chosen from the dropdown of the author's provider's models. */
-function StageModelField({ stage }: { stage: EditStage }) {
+/** Which model this pass runs on. It is chosen in Settings, under Editing team. */
+function StageModelNote({ stage, onChange }: { stage: EditStage; onChange: () => void }) {
   const ai = useAiSettings();
   const models = useEditModels();
-  if (!models) return null;
-  const provider: AiProvider = ai?.provider ?? "anthropic";
+  if (!ai || !models) return null;
   return (
     <div className="space-y-1">
-      <Label htmlFor="stage-model">Model for this pass</Label>
-      <ModelSelect
-        id="stage-model"
-        className="h-8 w-56"
-        options={MODEL_SUGGESTIONS[provider]}
-        value={modelForStage(provider, models, stage, ai?.model)}
-        onChange={(model) => void saveEditModel(provider, stage, model)}
-      />
+      <p className="text-xs font-medium">Model for this pass</p>
+      <p className="flex h-8 items-center gap-2 text-sm">
+        <code className="text-xs">{modelForStage(ai.provider, models, stage, ai.model)}</code>
+        <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={onChange}>
+          Change in Settings
+        </button>
+      </p>
     </div>
   );
 }
@@ -206,7 +200,7 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
       </ol>
       <p className="max-w-3xl text-xs text-muted-foreground">{info.summary}</p>
       <div className="flex flex-wrap items-end gap-4">
-        <StageModelField stage={workflow.stage} />
+        <StageModelNote stage={workflow.stage} onChange={() => navigate("settings")} />
         {workflow.stage === "copy" ? <StyleGuideField key={manuscript.id} manuscript={manuscript} /> : null}
         <div className="flex items-center gap-2">
           {done ? (
