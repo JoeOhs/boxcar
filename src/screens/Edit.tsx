@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, FileDown, FileText, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, FileDown, FileText, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import {
   db,
   newId,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/editing";
 import { buildDraftDocx } from "@/lib/docx";
 import { downloadBlob, fileSafeName } from "@/lib/download";
-import { DEVELOPMENTAL_AGENTS, runDevelopmentalReview, summarisedBigPicture, type DevelopmentalProgress } from "@/lib/developmentalReview";
+import { bigPicture, DEVELOPMENTAL_AGENTS, runDevelopmentalReview, summarisedBigPicture, type DevelopmentalProgress } from "@/lib/developmentalReview";
 import { exportStageReport, REPORT_TITLE } from "@/lib/reports";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline } from "@/lib/hooks";
@@ -61,6 +61,15 @@ const QUICK_PROMPTS: Record<EditStage, { label: string; prompt: string }[]> = {
   proofread: [{ label: "Final check", prompt: "Do a last read for typos, repeated words and formatting slips, and list what you find." }],
 };
 
+/** Quick questions in the chat beside the developmental report, about the report as a whole. */
+const REPORT_QUICK_PROMPTS = [
+  { label: "Where do I start?", prompt: "Which of these flags should I deal with first, and why?" },
+  { label: "What links them?", prompt: "Do any of these flags share a root cause I could fix in one revision?" },
+];
+
+/** "1 flag", "6 flags". */
+const flagCount = (n: number) => `${n} ${n === 1 ? "flag" : "flags"}`;
+
 // ---------------------------------------------------------------------------
 // The editing workflow: developmental, line, copy, proofreading
 // ---------------------------------------------------------------------------
@@ -71,9 +80,9 @@ function StageModelNote({ stage, onChange }: { stage: EditStage; onChange: () =>
   const models = useEditModels();
   if (!ai || !models) return null;
   return (
-    <div className="space-y-1">
+    <div className="ml-auto space-y-1 text-right">
       <p className="text-xs font-medium">Model for this pass</p>
-      <p className="flex h-8 items-center gap-2 text-sm">
+      <p className="flex h-8 items-center justify-end gap-2 text-sm">
         <code className="text-xs">{modelForStage(ai.provider, models, stage, ai.model)}</code>
         <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={onChange}>
           Change in Settings
@@ -109,14 +118,17 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
   const info = stageInfo(workflow.stage);
   const done = workflow.completed.includes(workflow.stage);
   const allDone = workflow.completed.length === EDIT_STAGES.length;
+  /** The pass after this one, offered once this one is finished. */
+  const next = EDIT_STAGES[EDIT_STAGES.findIndex((s) => s.id === workflow.stage) + 1];
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [progress, setProgress] = useState<DevelopmentalProgress | null>(null);
 
   /**
    * Finishing the developmental pass runs the four developmental editors over the whole
-   * book. Their notes come back to the author (listed below and in each chapter's
-   * Suggestions), and only then is the pass finished.
+   * book. Their flags come back to the author in the developmental report, and only then
+   * is the pass finished. It stays selected while the author works through the report;
+   * "Move on to line editing" starts the next pass.
    */
   async function finishDevelopmental() {
     if (!ai) {
@@ -133,16 +145,15 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
     try {
       const result = await runDevelopmentalReview(manuscript, settingsForStage(ai, models ?? {}, "developmental"), setProgress);
       setProgress(null);
-      await completeStage(manuscript, "developmental");
+      await completeStage(manuscript, "developmental", { stay: true });
       // The report takes over the space as soon as the pass is finished.
       onDevelopmentalComplete();
-      const breakdown = result.perAgent.map((a) => `${a.name.toLowerCase()} ${a.notes}`).join(", ");
       setNote({
         ok: true,
         text:
           result.notes > 0
-            ? `The developmental editors gave ${result.notes} ${result.notes === 1 ? "note" : "notes"} (${breakdown}). They are listed under Developmental feedback and in each chapter's Suggestions. The pass is finished.`
-            : "The developmental editors found nothing to raise. The pass is finished.",
+            ? `The developmental report is ready, with ${flagCount(result.notes)}. Work through them below, then move on to line editing when you're ready.`
+            : "The developmental editors raised no flags. Move on to line editing when you're ready.",
       });
     } catch (e) {
       setNote({ ok: false, text: e instanceof Error ? e.message : "The developmental pass could not be run. Nothing was changed." });
@@ -202,9 +213,19 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
       </ol>
       <p className="max-w-3xl text-xs text-muted-foreground">{info.summary}</p>
       <div className="flex flex-wrap items-end gap-4">
-        <StageModelNote stage={workflow.stage} onChange={() => navigate("settings")} />
         {workflow.stage === "copy" ? <StyleGuideField key={manuscript.id} manuscript={manuscript} /> : null}
         <div className="flex items-center gap-2">
+          {done && next ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setNote(null);
+                void selectStage(manuscript, next.id);
+              }}
+            >
+              <ChevronRight /> Move on to {next.label.toLowerCase()}
+            </Button>
+          ) : null}
           {done ? (
             <Button size="sm" variant="outline" onClick={() => void reopenStage(manuscript, workflow.stage)}>
               <RotateCcw /> Reopen this pass
@@ -229,6 +250,8 @@ function WorkflowBar({ manuscript, onDevelopmentalComplete }: { manuscript: Manu
             </Button>
           ) : null}
         </div>
+        {/* ml-auto pushes the model note to the right-hand end of the row. */}
+        <StageModelNote stage={workflow.stage} onChange={() => navigate("settings")} />
       </div>
       {progress ? <EditorsProgress progress={progress} /> : null}
       {note ? <p className={cn("text-sm", note.ok ? "text-success" : "text-destructive")}>{note.text}</p> : null}
@@ -261,78 +284,36 @@ function EditorsProgress({ progress }: { progress: DevelopmentalProgress }) {
 }
 
 /**
- * The developmental feedback: the notes the four developmental editors gave on the
- * whole book, grouped by editor. Each note can be opened in its chapter.
- */
-export function DevelopmentalFeedback({ manuscript, onOpen }: { manuscript: Manuscript; onOpen: (chapterId: string) => void }) {
-  const notes = useLiveQuery(async () => {
-    const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
-    return rows.filter((s) => s.stage === "developmental" && s.agent).sort((a, b) => a.createdAt - b.createdAt);
-  }, [manuscript.id]);
-  const chapters = useChapters(manuscript.id);
-  if (!notes || notes.length === 0) return null;
-  const titleOf = (chapterId: string) => {
-    const c = chapters?.find((x) => x.id === chapterId);
-    return c ? c.title || "Untitled chapter" : "Chapter";
-  };
-  const groups = DEVELOPMENTAL_AGENTS.map((agent) => ({
-    agent,
-    items: notes.filter((n) => n.agent === agent.name),
-  })).filter((g) => g.items.length > 0);
-
-  return (
-    <div className="max-h-64 shrink-0 space-y-3 overflow-y-auto border-b border-border bg-background px-6 py-4">
-      <h3 className="text-sm font-medium">Developmental feedback</h3>
-      {groups.map(({ agent, items }) => (
-        <div key={agent.id} className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {agent.name} ({items.length})
-          </p>
-          {items.map((n) => (
-            <div key={n.id} className="flex items-start gap-3 rounded-md border border-border p-2 text-sm">
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="text-xs text-muted-foreground">
-                  {n.comment.startsWith("Whole book:") ? "Whole book" : titleOf(n.chapterId)}
-                  {" - "}
-                  <Badge variant={n.status === "accepted" ? "success" : n.status === "rejected" ? "outline" : "secondary"}>
-                    {n.status === "accepted" ? "Addressed" : n.status === "rejected" ? "Dismissed" : "Open"}
-                  </Badge>
-                </p>
-                <p>{n.comment.replace(/^Whole book:\s*/, "")}</p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => onOpen(n.chapterId)}>
-                Open chapter
-              </Button>
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * The developmental editor's report. The flags are listed on the left to jump
- * between; hovering a flag offers "Push to writing space"; asking about a flag
- * opens the editor chat with the question ready to send.
+ * The developmental editor's report: a card introducing it, then a Flags card
+ * with each flag nested under the editor who raised it. Hovering a flag offers
+ * "Push to writing space"; asking about a flag opens the editor chat with the
+ * question ready to send.
  */
 export function DevelopmentalReport({
   manuscript,
   onOpenChapter,
   onAsk,
   onPush,
+  onBack,
 }: {
   manuscript: Manuscript;
   onOpenChapter: (chapterId: string) => void;
   onAsk: (note: Suggestion) => void;
   onPush: (note: Suggestion) => void;
+  /** Leaves the report and goes back to the open chapter. */
+  onBack?: () => void;
 }) {
   const notes = useLiveQuery(async () => {
     const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
     return rows.filter((s) => s.stage === "developmental" && s.agent).sort((a, b) => a.createdAt - b.createdAt);
   }, [manuscript.id]);
   const chapters = useChapters(manuscript.id);
-  const [focusId, setFocusId] = useState<string | null>(null);
+
+  const backButton = onBack ? (
+    <Button size="sm" variant="outline" onClick={onBack}>
+      <ChevronLeft /> Back to the chapter
+    </Button>
+  ) : null;
 
   if (notes === undefined) return null;
   if (notes.length === 0) {
@@ -342,6 +323,7 @@ export function DevelopmentalReport({
         <p className="max-w-sm text-sm text-muted-foreground">
           Finish the developmental pass and the editors' report will be kept here, with each flag to work through.
         </p>
+        {backButton}
       </div>
     );
   }
@@ -356,77 +338,53 @@ export function DevelopmentalReport({
     items: notes.filter((note) => note.agent === agent.name),
   })).filter((group) => group.items.length > 0);
 
-  function jump(note: Suggestion) {
-    setFocusId(note.id);
-    document.getElementById(`flag-${note.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
   return (
-    <div className="flex min-h-0 flex-1">
-      <aside className="w-72 shrink-0 overflow-y-auto border-r border-border p-3" aria-label="Flags in the report">
-        <h2 className="mb-2 text-sm font-medium">Flags ({notes.length})</h2>
-        <div className="space-y-1">
-          {notes.map((note) => (
-            <button
-              key={note.id}
-              onClick={() => jump(note)}
-              className={cn(
-                "w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                note.id === focusId ? "bg-accent font-medium" : "hover:bg-accent/50",
-              )}
-            >
-              <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">
-                {note.agent}
-                {note.comment.startsWith("Whole book:") ? "" : ` · ${titleOf(note.chapterId)}`}
-              </span>
-              <span className="block line-clamp-2 text-xs">{clean(note)}</span>
-            </button>
-          ))}
-        </div>
-      </aside>
-      <section className="min-w-0 flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-2xl space-y-5">
-          <div>
+    <section className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="mx-auto max-w-2xl space-y-5">
+        <div className="space-y-1 rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="font-serif text-xl font-semibold">Developmental report</h2>
-            <p className="text-sm text-muted-foreground">
-              Read through what the editors flagged. Hover a flag to push it into the writing space for revision, or ask the
-              editor about it in the edit chat.
-            </p>
+            {backButton}
           </div>
+          <p className="text-sm text-muted-foreground">
+            Read through what the editors flagged. Hover a flag to push it into the writing space for revision, or ask the
+            editor about it in the panel on the right.
+          </p>
+        </div>
+        <section className="space-y-5 rounded-lg border border-border bg-card p-4" aria-label="Flags in the report">
+          <h2 className="text-sm font-medium">Flags ({notes.length})</h2>
           {groups.map(({ agent, items }) => (
             <div key={agent.id} className="space-y-2">
-              <h3 className="text-sm font-medium">{agent.name}</h3>
-              {items.map((note) => (
-                <article
-                  key={note.id}
-                  id={`flag-${note.id}`}
-                  className={cn(
-                    "group space-y-2 rounded-md border border-border bg-card p-3 text-sm transition-shadow",
-                    note.id === focusId && "ring-2 ring-ring/50",
-                  )}
-                >
-                  <p className="text-xs text-muted-foreground">
-                    {note.comment.startsWith("Whole book:") ? "Whole book" : titleOf(note.chapterId)}
-                  </p>
-                  <p>{clean(note)}</p>
-                  <div className="flex flex-wrap gap-1.5 opacity-70 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <Button size="sm" onClick={() => onPush(note)}>
-                      <PenLine /> Push to writing space
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => onAsk(note)}>
-                      <MessageSquare /> Ask the Editor
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => onOpenChapter(note.chapterId)}>
-                      Open the chapter
-                    </Button>
-                  </div>
-                </article>
-              ))}
+              <h3 className="text-sm font-medium">
+                {agent.name} <span className="font-normal text-muted-foreground">· {flagCount(items.length)}</span>
+              </h3>
+              {/* Each flag sits indented under the editor (the subject) who raised it. */}
+              <div className="ml-2 space-y-2 border-l-2 border-border pl-4">
+                {items.map((note) => (
+                  <article key={note.id} className="group space-y-2 rounded-md border border-border bg-background p-3 text-sm">
+                    <p className="text-xs text-muted-foreground">
+                      {note.comment.startsWith("Whole book:") ? "Whole book" : titleOf(note.chapterId)}
+                    </p>
+                    <p>{clean(note)}</p>
+                    <div className="flex flex-wrap gap-1.5 opacity-70 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <Button size="sm" onClick={() => onPush(note)}>
+                        <PenLine /> Push to writing space
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onAsk(note)}>
+                        <MessageSquare /> Ask the Editor
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => onOpenChapter(note.chapterId)}>
+                        Open the chapter
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           ))}
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -551,7 +509,7 @@ function SuggestionsPanel({
         })),
       );
       const who = AGENT_LABEL[info.role].toLowerCase();
-      const what = notes ? "note" : "change";
+      const what = notes ? "flag" : "change";
       setMessage({
         ok: true,
         text: edits.length
@@ -568,7 +526,7 @@ function SuggestionsPanel({
   return (
     <div className="space-y-5">
       <Card className="space-y-3 p-3">
-        <h3 className="text-sm font-medium">{notes ? "Add a note" : "Suggest a change"}</h3>
+        <h3 className="text-sm font-medium">{notes ? "Add a flag" : "Suggest a change"}</h3>
         <p className="text-xs text-muted-foreground">
           {notes
             ? "Write down a structural concern. Select text in the chapter to point at a passage, or leave the passage empty for the whole chapter."
@@ -590,7 +548,7 @@ function SuggestionsPanel({
           </div>
         )}
         <div className="space-y-1">
-          <Label htmlFor="s-comment">{notes ? "Your note" : "Why (optional)"}</Label>
+          <Label htmlFor="s-comment">{notes ? "Your flag" : "Why (optional)"}</Label>
           {notes ? (
             <Textarea id="s-comment" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
           ) : (
@@ -598,7 +556,7 @@ function SuggestionsPanel({
           )}
         </div>
         <Button size="sm" disabled={!canAdd} onClick={() => void addOwn()}>
-          {notes ? "Add note" : "Add suggestion"}
+          {notes ? "Add flag" : "Add suggestion"}
         </Button>
       </Card>
 
@@ -631,7 +589,7 @@ function SuggestionsPanel({
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Waiting for you ({pending.length})</h3>
         {pending.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{notes ? "No notes to go through." : "No suggestions to review."}</p>
+          <p className="text-xs text-muted-foreground">{notes ? "No flags to go through." : "No suggestions to review."}</p>
         ) : null}
         {pending.map((s) => (
           <Card key={s.id} className="space-y-2 p-3 text-sm">
@@ -854,7 +812,8 @@ function ReportsMenu({
   manuscript: Manuscript;
   viewStage: EditStage;
   onView: (stage: EditStage) => void;
-  onOpenDevReport: () => void;
+  /** Opens the full developmental report; left out when the report is already open. */
+  onOpenDevReport?: () => void;
 }) {
   const { workspace } = useApp();
   const [exporting, setExporting] = useState<EditStage | null>(null);
@@ -869,6 +828,27 @@ function ReportsMenu({
     }
     return out;
   }, [manuscript.id, manuscript.editWorkflow]);
+
+  const [exportingDraft, setExportingDraft] = useState(false);
+
+  /** Writes the whole book as a Word file for a human editor, with the text as it is now. */
+  async function exportDraft() {
+    setExportingDraft(true);
+    setNote(null);
+    try {
+      const fresh = await db.manuscripts.get(manuscript.id);
+      if (!fresh) throw new Error("This manuscript no longer exists.");
+      const rows = await db.chapters.where("manuscriptId").equals(manuscript.id).toArray();
+      const blob = await buildDraftDocx(fresh, workspace?.name ?? "", rows);
+      const filename = `${fileSafeName(fresh.title)}-editing-draft.docx`;
+      downloadBlob(blob, filename);
+      setNote({ ok: true, text: `Saved ${filename}. Send it to your editor.` });
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : "The export failed." });
+    } finally {
+      setExportingDraft(false);
+    }
+  }
 
   async function exportReport(reportStage: EditStage) {
     setExporting(reportStage);
@@ -897,10 +877,10 @@ function ReportsMenu({
               <span className="block text-xs text-muted-foreground">
                 {item.id === "developmental" ? "The developmental editors" : AGENT_LABEL[item.role]}
                 {" · "}
-                {count === 0 ? "nothing yet" : `${count} ${count === 1 ? "item" : "items"}`}
+                {count === 0 ? "nothing yet" : item.id === "developmental" ? flagCount(count) : `${count} ${count === 1 ? "item" : "items"}`}
               </span>
             </button>
-            {item.id === "developmental" ? (
+            {item.id === "developmental" && onOpenDevReport ? (
               <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" disabled={count === 0} title="Open the full developmental report" onClick={onOpenDevReport}>
                 Full report
               </Button>
@@ -918,6 +898,19 @@ function ReportsMenu({
           </div>
         );
       })}
+      <div className="flex items-center justify-between gap-2 border-t border-border px-2 pt-2">
+        <span className="text-xs text-muted-foreground">The whole book as a Word file, for a human editor.</span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 shrink-0 px-2"
+          disabled={exportingDraft}
+          title="Save the whole book as a Word file for a human editor"
+          onClick={() => void exportDraft()}
+        >
+          <FileDown /> {exportingDraft ? "Exporting..." : "Export for editing"}
+        </Button>
+      </div>
       {note ? <p className={cn("px-1 pt-1 text-xs", note.ok ? "text-success" : "text-destructive")}>{note.text}</p> : null}
     </Card>
   );
@@ -930,8 +923,16 @@ function ChapterReview({
   initialTab,
   initialQuestion,
   onOpenReport,
+  initialViewStage,
+  chapters,
+  numbers,
+  onChapterChange,
 }: {
   chapter: Chapter;
+  /** Every chapter of the book, in order, for turning pages. */
+  chapters: Chapter[];
+  numbers: ReturnType<typeof numberChapters>;
+  onChapterChange: (chapterId: string) => void;
   manuscript: Manuscript;
   stage: EditStage;
   /** The tab to open on, e.g. the chat after a flag is asked about. */
@@ -940,17 +941,24 @@ function ChapterReview({
   initialQuestion?: string;
   /** Opens the full developmental report view. */
   onOpenReport: () => void;
+  /** Which pass's report to show first, e.g. one opened from the Reports panel beside the developmental report. */
+  initialViewStage?: EditStage;
 }) {
   const ai = useAiSettings();
   const models = useEditModels();
   const [tab, setTab] = useState<Tab>(initialTab ?? "reports");
-  const [viewStage, setViewStage] = useState<EditStage>(stage);
+  const [viewStage, setViewStage] = useState<EditStage>(initialViewStage ?? stage);
   const [selectedText, setSelectedText] = useState("");
   const viewRef = useRef<HTMLDivElement>(null);
   const info = stageInfo(stage);
 
-  // Follow the workflow when it moves to another pass.
-  useEffect(() => setViewStage(stage), [stage]);
+  // Follow the workflow when it moves to another pass (but not on opening, so initialViewStage holds).
+  const shownStage = useRef(stage);
+  useEffect(() => {
+    if (shownStage.current === stage) return;
+    shownStage.current = stage;
+    setViewStage(stage);
+  }, [stage]);
 
   function captureSelection() {
     const selection = window.getSelection();
@@ -964,9 +972,47 @@ function ChapterReview({
     { id: "ai", label: "Ask the AI", icon: <MessageSquare /> },
   ];
 
+  const index = chapters.findIndex((c) => c.id === chapter.id);
+  const previous = index > 0 ? chapters[index - 1] : undefined;
+  const next = index >= 0 && index < chapters.length - 1 ? chapters[index + 1] : undefined;
+  const label = (c: Chapter) => chapterLabel(c, numbers.get(c.id), "numbered-with-title");
+
+  // The parent is a grid: the page sits under the workflow bar, the side panel runs the full height.
   return (
-    <div className="flex min-h-0 flex-1">
-      <section className="min-w-0 flex-1 overflow-y-auto">
+    <div className="contents">
+      <section className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col">
+        <nav className="flex shrink-0 items-center justify-center gap-2 border-b border-border px-4 py-2" aria-label="Turn pages">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            disabled={!previous}
+            aria-label="Previous chapter"
+            title={previous ? `Previous: ${label(previous)}` : "This is the first chapter"}
+            onClick={() => previous && onChapterChange(previous.id)}
+          >
+            <ChevronLeft />
+          </Button>
+          <Select className="h-8 w-72" value={chapter.id} onChange={(e) => onChapterChange(e.target.value)} aria-label="Chapter to edit">
+            {chapters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {label(c)}
+              </option>
+            ))}
+          </Select>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            disabled={!next}
+            aria-label="Next chapter"
+            title={next ? `Next: ${label(next)}` : "This is the last chapter"}
+            onClick={() => next && onChapterChange(next.id)}
+          >
+            <ChevronRight />
+          </Button>
+        </nav>
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <div
           ref={viewRef}
           onMouseUp={captureSelection}
@@ -980,9 +1026,10 @@ function ChapterReview({
             <p className="text-center text-sm text-muted-foreground">This chapter is empty. Write it in the Write screen.</p>
           )}
         </div>
+        </div>
       </section>
 
-      <aside className="flex w-[26rem] shrink-0 flex-col border-l border-border">
+      <aside className="col-start-2 row-span-2 row-start-1 flex min-h-0 w-[26rem] flex-col border-l border-border">
         <div className="flex shrink-0 gap-1 border-b border-border px-3 py-2">
           {tabs.map((t) => (
             <Button key={t.id} size="sm" variant={tab === t.id ? "secondary" : "ghost"} onClick={() => setTab(t.id)}>
@@ -1033,19 +1080,106 @@ function ChapterReview({
   );
 }
 
+/**
+ * The side panel beside the developmental report: the Reports card (to export the report or
+ * open another pass's) and the chat with the developmental editor, so a flag can be
+ * questioned without leaving the report.
+ */
+function ReportSidePanel({
+  manuscript,
+  askNote,
+  onOpenStage,
+}: {
+  manuscript: Manuscript;
+  /** The flag the author asked about; the chat opens with the question ready to send. */
+  askNote: Suggestion | null;
+  /** Opens another pass's report, which is read chapter by chapter. */
+  onOpenStage: (stage: EditStage) => void;
+}) {
+  const ai = useAiSettings();
+  const models = useEditModels();
+  const [tab, setTab] = useState<"reports" | "ai">(askNote ? "ai" : "reports");
+  const info = stageInfo("developmental");
+  const question = askNote?.comment.replace(/^Whole book:\s*/, "");
+
+  /** The editor sees the book in brief, every flag in the report, and the whole chapter a flag is about. */
+  async function context(): Promise<string> {
+    const [book, rows, chapter] = await Promise.all([
+      bigPicture(manuscript),
+      db.suggestions.where("manuscriptId").equals(manuscript.id).toArray(),
+      askNote && !askNote.comment.startsWith("Whole book:") ? db.chapters.get(askNote.chapterId) : undefined,
+    ]);
+    const flags = rows
+      .filter((s) => s.stage === "developmental" && s.agent)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((s) => `- ${s.agent}: ${s.comment}`)
+      .join("\n");
+    return (
+      `Title: ${manuscript.title}\n${genreContext(genreById(manuscript.genre))}\nEditing pass: ${info.label}\n\n` +
+      `The book in brief:\n${book}\n\nThe flags in the developmental report:\n${flags}` +
+      (chapter ? `\n\nThe chapter this flag is about, "${chapter.title}" (every word):\n${htmlToText(chapter.content)}` : "")
+    );
+  }
+
+  return (
+    <aside className="col-start-2 row-span-2 row-start-1 flex min-h-0 w-[26rem] flex-col border-l border-border">
+      <div className="flex shrink-0 gap-1 border-b border-border px-3 py-2">
+        <Button size="sm" variant={tab === "reports" ? "secondary" : "ghost"} onClick={() => setTab("reports")}>
+          <FileText /> Reports
+        </Button>
+        <Button size="sm" variant={tab === "ai" ? "secondary" : "ghost"} onClick={() => setTab("ai")}>
+          <MessageSquare /> Ask the Editor
+        </Button>
+      </div>
+      {tab === "ai" ? (
+        <div className="min-h-0 flex-1">
+          <AgentChat
+            key={question ?? ""}
+            manuscriptId={manuscript.id}
+            role={info.role}
+            persona={info.persona}
+            model={ai && models ? modelForStage(ai.provider, models, "developmental", ai.model) : undefined}
+            getContext={context}
+            quickPrompts={REPORT_QUICK_PROMPTS}
+            initialText={question ? `About this developmental flag: "${question}"\n\n` : undefined}
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ReportsMenu
+            manuscript={manuscript}
+            viewStage="developmental"
+            onView={(stage) => stage !== "developmental" && onOpenStage(stage)}
+          />
+        </div>
+      )}
+    </aside>
+  );
+}
+
 function EditBody({ manuscript }: { manuscript: Manuscript }) {
-  const { chapterId, setChapterId, navigate, workspace, setPushedNote } = useApp();
+  const { chapterId, setChapterId, navigate, setPushedNote } = useApp();
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
   const workflow = workflowOf(manuscript);
-  const [exporting, setExporting] = useState(false);
-  const [exportNote, setExportNote] = useState<{ ok: boolean; text: string } | null>(null);
-  const [showReport, setShowReport] = useState(() => workflow.completed.includes("developmental"));
+  // The report opens by itself while the developmental pass is finished and still selected.
+  const [showReport, setShowReport] = useState(() => workflow.stage === "developmental" && workflow.completed.includes("developmental"));
   const [askNote, setAskNote] = useState<Suggestion | null>(null);
   const [askKey, setAskKey] = useState(0);
+  /** Another pass's report, opened from the Reports card beside the developmental report. */
+  const [openStage, setOpenStage] = useState<EditStage | undefined>(undefined);
   const activeQuestion =
-    askNote && current && askNote.chapterId === current.id ? askNote.comment.replace(/^Whole book:\s*/, "") : undefined;
+    !showReport && askNote && current && askNote.chapterId === current.id ? askNote.comment.replace(/^Whole book:\s*/, "") : undefined;
+
+  // Moving on to line editing leaves the report for the chapters.
+  const stage = workflow.stage;
+  const seenStage = useRef(stage);
+  useEffect(() => {
+    if (seenStage.current === stage) return;
+    seenStage.current = stage;
+    if (stage !== "developmental") setShowReport(false);
+  }, [stage]);
 
   /** Sends a flag to the writing space, where it waits above the chapter until the author is done with it. */
   function pushToWrite(note: Suggestion) {
@@ -1057,107 +1191,83 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
     navigate("write");
   }
 
+  /** Puts the question in the chat beside the report; the report stays open. */
   function askAbout(note: Suggestion) {
     setChapterId(note.chapterId);
     setAskNote(note);
     setAskKey((value) => value + 1);
+  }
+
+  function openChapter(id: string) {
+    setChapterId(id);
+    setAskNote(null);
+    setOpenStage(undefined);
     setShowReport(false);
   }
 
-  /** Writes the whole book as a Word file for a human editor, with the text as it is now. */
-  async function exportDraft() {
-    setExporting(true);
-    setExportNote(null);
-    try {
-      const fresh = await db.manuscripts.get(manuscript.id);
-      if (!fresh) throw new Error("This manuscript no longer exists.");
-      const rows = await db.chapters.where("manuscriptId").equals(manuscript.id).toArray();
-      const blob = await buildDraftDocx(fresh, workspace?.name ?? "", rows);
-      const filename = `${fileSafeName(fresh.title)}-editing-draft.docx`;
-      downloadBlob(blob, filename);
-      setExportNote({ ok: true, text: `Saved ${filename}. Send it to your editor.` });
-    } catch (e) {
-      setExportNote({ ok: false, text: e instanceof Error ? e.message : "The export failed." });
-    } finally {
-      setExporting(false);
-    }
+  function leaveReport(stageToOpen?: EditStage) {
+    setAskNote(null);
+    setOpenStage(stageToOpen);
+    setShowReport(false);
   }
+
+  const reviewing = !showReport && chapters !== undefined && current !== undefined;
+  const sidePanel = reviewing || showReport;
 
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader
         title="Edit"
         description="Four passes in order: developmental, line, copy and proofreading. Accept or reject suggestions and keep earlier versions."
-        actions={
-          <>
-            <Button
-              variant={showReport ? "secondary" : "outline"}
-              size="sm"
-              disabled={!workflow.completed.includes("developmental")}
-              aria-pressed={showReport}
-              title="The developmental editors' report, with each flag to work through"
-              onClick={() => setShowReport((open) => !open)}
-            >
-              <Sparkles /> {showReport ? "Back to the chapter" : "Developmental report"}
-            </Button>
-            <Button variant="outline" size="sm" disabled={exporting || !chapters?.length} title="Save the whole book as a Word file for a human editor" onClick={() => void exportDraft()}>
-              <FileDown /> {exporting ? "Exporting..." : "Export for editing"}
-            </Button>
-            {current ? (
-              <Select
-                className="h-8 w-64"
-                value={current.id}
-                onChange={(e) => {
-                  setChapterId(e.target.value);
-                  setAskNote(null);
-                  setShowReport(false);
-                }}
-                aria-label="Chapter to edit"
-              >
-                {chapters?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {chapterLabel(c, numbers.get(c.id), "numbered-with-title")}
-                  </option>
-                ))}
-              </Select>
-            ) : null}
-          </>
-        }
       />
-      {exportNote ? (
-        <div className={cn("border-b border-border bg-muted px-6 py-1.5 text-xs", exportNote.ok ? "text-muted-foreground" : "text-destructive")}>
-          {exportNote.text}
+      {/*
+        A grid, so the workflow bar keeps its place (and its state) whatever is shown below it.
+        While a chapter is open, the side panel takes the right column from top to bottom.
+      */}
+      <div
+        className={cn(
+          "grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]",
+          sidePanel ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)]",
+        )}
+      >
+        <div className="col-start-1 row-start-1">
+          <WorkflowBar manuscript={manuscript} onDevelopmentalComplete={() => setShowReport(true)} />
         </div>
-      ) : null}
-      <WorkflowBar manuscript={manuscript} onDevelopmentalComplete={() => setShowReport(true)} />
-      {showReport ? (
-        <DevelopmentalReport
-          manuscript={manuscript}
-          onOpenChapter={(id) => {
-            setChapterId(id);
-            setAskNote(null);
-            setShowReport(false);
-          }}
-          onAsk={askAbout}
-          onPush={pushToWrite}
-        />
-      ) : chapters === undefined ? null : current ? (
-        <ChapterReview
-          key={`${current.id}:${askKey}`}
-          chapter={current}
-          manuscript={manuscript}
-          stage={workflow.stage}
-          initialTab={activeQuestion ? "ai" : undefined}
-          initialQuestion={activeQuestion}
-          onOpenReport={() => setShowReport(true)}
-        />
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <h2 className="font-serif text-xl font-semibold">Nothing to edit yet</h2>
-          <p className="max-w-sm text-sm text-muted-foreground">Write a chapter first, then come back to review it.</p>
-          <Button onClick={() => navigate("write")}>Go to Write</Button>
-        </div>
-      )}
+        {showReport ? (
+          <>
+            <div className="col-start-1 row-start-2 flex min-h-0">
+              <DevelopmentalReport
+                manuscript={manuscript}
+                onOpenChapter={openChapter}
+                onAsk={askAbout}
+                onPush={pushToWrite}
+                onBack={current ? () => leaveReport() : undefined}
+              />
+            </div>
+            <ReportSidePanel key={askKey} manuscript={manuscript} askNote={askNote} onOpenStage={(s) => leaveReport(s)} />
+          </>
+        ) : chapters === undefined ? null : current ? (
+          <ChapterReview
+            key={`${current.id}:${askKey}`}
+            chapter={current}
+            chapters={chapters}
+            numbers={numbers}
+            onChapterChange={openChapter}
+            manuscript={manuscript}
+            stage={workflow.stage}
+            initialTab={activeQuestion ? "ai" : undefined}
+            initialQuestion={activeQuestion}
+            initialViewStage={openStage}
+            onOpenReport={() => setShowReport(true)}
+          />
+        ) : (
+          <div className="col-start-1 row-start-2 flex flex-col items-center justify-center gap-3 p-8 text-center">
+            <h2 className="font-serif text-xl font-semibold">Nothing to edit yet</h2>
+            <p className="max-w-sm text-sm text-muted-foreground">Write a chapter first, then come back to review it.</p>
+            <Button onClick={() => navigate("write")}>Go to Write</Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

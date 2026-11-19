@@ -78,6 +78,16 @@ describe("roadmap", () => {
     await reopenStage((await db.manuscripts.get(m.id))!, "line");
     expect(await editCards(m.id)).toEqual({ developmental: true, line: false, copy: false, proofread: false });
   });
+  it("the developmental pass can finish and stay selected until the author moves on", async () => {
+    const { m } = await seedBook();
+    await completeStage((await db.manuscripts.get(m.id))!, "developmental", { stay: true });
+    let w = workflowOf((await db.manuscripts.get(m.id))!);
+    expect([w.stage, w.completed]).toEqual(["developmental", ["developmental"]]);
+    expect(isStageOpen(w, "line")).toBe(true);
+    await selectStage((await db.manuscripts.get(m.id))!, "line");
+    w = workflowOf((await db.manuscripts.get(m.id))!);
+    expect([w.stage, w.completed]).toEqual(["line", ["developmental"]]);
+  });
   it("F05: with the draft done, finishing all passes moves the stage to formatting (and it never goes back)", async () => {
     const { m } = await seedBook();
     for (const c of await db.roadmapCards.where("manuscriptId").equals(m.id).toArray())

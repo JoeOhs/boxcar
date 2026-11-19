@@ -125,12 +125,16 @@ export async function selectStage(manuscript: Manuscript, stage: EditStage): Pro
   if (isStageOpen(workflow, stage)) await save(manuscript, { ...workflow, stage });
 }
 
-/** Marks a pass finished and moves on to the next one. */
-export async function completeStage(manuscript: Manuscript, stage: EditStage): Promise<void> {
+/**
+ * Marks a pass finished and moves on to the next one. With `stay`, the pass is marked
+ * finished but stays selected, so the author can work through its report first and move
+ * on when ready (the developmental pass does this: revising comes before line editing).
+ */
+export async function completeStage(manuscript: Manuscript, stage: EditStage, options: { stay?: boolean } = {}): Promise<void> {
   const workflow = workflowOf(manuscript);
   if (!isStageOpen(workflow, stage)) return;
   const completed = ORDER.filter((s) => s === stage || workflow.completed.includes(s));
-  const next = ORDER[ORDER.indexOf(stage) + 1] ?? stage;
+  const next = options.stay ? stage : (ORDER[ORDER.indexOf(stage) + 1] ?? stage);
   await save(manuscript, { ...workflow, completed, stage: next });
 }
 
