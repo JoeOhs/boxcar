@@ -146,3 +146,34 @@ describe("developmental progress bar", () => {
     for (const label of seen.map((p) => p.label)) expect(label.split(" ").length).toBeLessThanOrEqual(5);
   });
 });
+
+describe("chapter references are saved with names when the editors finish", () => {
+  it("'[n]' in a flag is stored as '[n: name]' and still names the right chapter after reordering", async () => {
+    const { m } = await seedBook();
+    await chapter(m, "<p>For my father.</p>", "front", "DEDICATION");
+    const departure = await chapter(m, "<p>Four years away.</p>", "chapter", "Departure");
+    const ret = await chapter(m, "<p>Five years away.</p>", "chapter", "Return");
+    mockFetch((call) => {
+      if (isSummaryCall(call)) return openAiReply("SUMMARY");
+      // Only the first editor raises anything: a whole-book flag citing [2] and [3].
+      return /story structure/i.test(String(call.body.messages[0].content))
+        ? openAiReply('[{"chapter":0,"comment":"Four years in [2] but five in [3]."}]')
+        : openAiReply("[]");
+    });
+
+    await runDevelopmentalReview(m, S);
+
+    const flag = (await db.suggestions.toArray()).find((s) => s.stage === "developmental")!;
+    expect(flag.comment).toBe("Whole book: Four years in [2: Chapter 1: Departure] but five in [3: Chapter 2: Return].");
+
+    // Revising: a new chapter goes in first, so today "[2]" would be a different chapter.
+    const { citedChapters, expandChapterRefs, briefOrder } = await import("@/lib/chapterRefs");
+    const prologue = await chapter(m, "<p>New.</p>", "chapter", "Prologue");
+    await db.chapters.update(prologue.id, { order: -1 });
+    const ordered = briefOrder(await db.chapters.where("manuscriptId").equals(m.id).toArray());
+    expect(ordered[1].title).toBe("Prologue");
+
+    expect(citedChapters(flag.comment, ordered).map((c) => c.id)).toEqual([departure.id, ret.id]);
+    expect(expandChapterRefs(flag.comment, ordered)).toBe(flag.comment);
+  });
+});

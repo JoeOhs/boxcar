@@ -1,4 +1,5 @@
 import { db, newId, type AiSettings, type Chapter, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
+import { expandChapterRefs } from "./chapterRefs";
 import { askAi, parseJson } from "./ai";
 import { categoryOf, ensureSummaries, hasFreshSummary } from "./chapterSummary";
 import type { GenreCategory } from "./genres";
@@ -197,7 +198,8 @@ export async function runDevelopmentalReview(
         kind: "note",
         original: "",
         replacement: "",
-        comment: number >= 1 && chapters[number - 1] ? text : `Whole book: ${text}`,
+        // Each "[n]" is saved with its chapter's name now, while the numbering still matches what the editors read.
+        comment: expandChapterRefs(number >= 1 && chapters[number - 1] ? text : `Whole book: ${text}`, chapters),
         agent: agent.name,
         status: "pending",
         createdAt: now + found.length,

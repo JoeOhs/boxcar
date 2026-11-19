@@ -37,6 +37,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
 import { flagRequestPrompt } from "@/components/Ghostwriter";
+import { briefOrder, citedChapters, expandChapterRefs, requestWholeBookCorrections, settleFlagIfDone } from "@/lib/ghostCorrections";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -69,12 +70,61 @@ const flagCount = (n: number) => `${n} ${n === 1 ? "flag" : "flags"}`;
 const isWholeBook = (s: Suggestion) => s.comment.startsWith("Whole book:");
 const flagText = (s: Suggestion) => s.comment.replace(/^Whole book:\s*/, "");
 
-/** Every developmental flag of the book, oldest first: the editors' and the author's own. */
+/**
+ * Every developmental flag of the book, oldest first: the editors' and the author's own.
+ * The Ghostwriter's corrections for a flag are not flags, so they are left out (see useGhostCorrections).
+ */
 function useDevelopmentalFlags(manuscriptId: string): Suggestion[] | undefined {
   return useLiveQuery(async () => {
     const rows = await db.suggestions.where("manuscriptId").equals(manuscriptId).toArray();
-    return rows.filter((s) => s.stage === "developmental").sort((a, b) => a.createdAt - b.createdAt);
+    return rows.filter((s) => s.stage === "developmental" && !s.forFlag).sort((a, b) => a.createdAt - b.createdAt);
   }, [manuscriptId]);
+}
+
+/** The Ghostwriter's corrections for whole-book flags, oldest first. */
+function useGhostCorrections(manuscriptId: string): Suggestion[] | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.suggestions.where("manuscriptId").equals(manuscriptId).toArray();
+    return rows.filter((s) => s.forFlag).sort((a, b) => a.createdAt - b.createdAt);
+  }, [manuscriptId]);
+}
+
+/** What happened when a suggested change was accepted. */
+type ApplyOutcome = "applied" | "missing" | "ambiguous" | "note";
+
+/**
+ * Accepts a suggestion. A change is applied to the chapter: read, snapshot, save and mark
+ * accepted in one transaction, so all of it happens or none of it. A note is only marked.
+ */
+async function applySuggestion(s: Suggestion): Promise<ApplyOutcome> {
+  if (s.kind === "note") {
+    await db.suggestions.update(s.id, { status: "accepted" });
+    return "note";
+  }
+  return db.transaction("rw", db.chapters, db.revisions, db.suggestions, async () => {
+    const fresh = await db.chapters.get(s.chapterId);
+    if (!fresh) return "missing" as const;
+    const result = replaceInHtml(fresh.content, s.original, s.replacement);
+    if (!result.ok) return result.reason;
+    await snapshotChapter(fresh, "Before accepting a suggestion");
+    await saveChapter(fresh.id, { content: result.html });
+    await db.suggestions.update(s.id, { status: "accepted" });
+    return "applied" as const;
+  });
+}
+
+/** The author-facing message for an accepted change that could not be applied, or null when it went in. */
+function applyProblem(outcome: ApplyOutcome): string | null {
+  if (outcome === "missing") return "That passage is no longer in the chapter, so the change could not be applied.";
+  if (outcome === "ambiguous") return "That passage appears more than once in the chapter, so it was not changed. Make the edit by hand, or reject it.";
+  return null;
+}
+
+/** Where the Ghostwriter is with a whole-book flag sent to it. */
+interface GhostRun {
+  busy: boolean;
+  ok?: boolean;
+  text?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +393,7 @@ export function DevelopmentalReport({
 }) {
   const notes = useLiveQuery(async () => {
     const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
-    return rows.filter((s) => s.stage === "developmental" && s.agent).sort((a, b) => a.createdAt - b.createdAt);
+    return rows.filter((s) => s.stage === "developmental" && s.agent && !s.forFlag).sort((a, b) => a.createdAt - b.createdAt);
   }, [manuscript.id]);
   const chapters = useChapters(manuscript.id);
 
@@ -370,7 +420,7 @@ export function DevelopmentalReport({
     const chapter = chapters?.find((item) => item.id === chapterId);
     return chapter ? chapter.title || "Untitled chapter" : "Chapter";
   };
-  const clean = (note: Suggestion) => note.comment.replace(/^Whole book:\s*/, "");
+  const clean = (note: Suggestion) => expandChapterRefs(note.comment.replace(/^Whole book:\s*/, ""), briefOrder(chapters ?? []));
   const groups = DEVELOPMENTAL_AGENTS.map((agent) => ({
     agent,
     items: notes.filter((note) => note.agent === agent.name),
@@ -499,28 +549,10 @@ function SuggestionsPanel({
   }
 
   async function accept(s: Suggestion) {
-    if (s.kind === "note") {
-      await db.suggestions.update(s.id, { status: "accepted" });
-      return;
-    }
-    // Read, snapshot, save and mark accepted in one transaction: all of it happens or none of it.
-    const outcome = await db.transaction("rw", db.chapters, db.revisions, db.suggestions, async () => {
-      const fresh = await db.chapters.get(s.chapterId);
-      if (!fresh) return "missing" as const;
-      const result = replaceInHtml(fresh.content, s.original, s.replacement);
-      if (!result.ok) return result.reason;
-      await snapshotChapter(fresh, "Before accepting a suggestion");
-      await saveChapter(fresh.id, { content: result.html });
-      await db.suggestions.update(s.id, { status: "accepted" });
-      return "applied" as const;
-    });
-    if (outcome === "missing") {
-      setMessage({ ok: false, text: "That passage is no longer in the chapter, so the change could not be applied." });
-    } else if (outcome === "ambiguous") {
-      setMessage({ ok: false, text: "That passage appears more than once in the chapter, so it was not changed. Make the edit by hand, or reject it." });
-    } else {
-      setMessage({ ok: true, text: "Applied. The earlier text is kept under Revisions." });
-    }
+    const outcome = await applySuggestion(s);
+    if (outcome === "note") return;
+    const problem = applyProblem(outcome);
+    setMessage(problem ? { ok: false, text: problem } : { ok: true, text: "Applied. The earlier text is kept under Revisions." });
   }
 
   async function review() {
@@ -714,6 +746,7 @@ function FlagsPane({
   onAsk,
   onPush,
   onGhost,
+  ghostRuns,
 }: {
   chapter: Chapter;
   /** The chapter's name as the page shows it, e.g. "Chapter 3: The Crossing". */
@@ -721,14 +754,91 @@ function FlagsPane({
   onAsk: (flag: Suggestion) => void;
   onPush: (flag: Suggestion) => void;
   onGhost: (flag: Suggestion) => void;
+  /** Where the Ghostwriter is with each whole-book flag sent to it, by flag id. */
+  ghostRuns: Record<string, GhostRun>;
 }) {
   const flags = useDevelopmentalFlags(chapter.manuscriptId);
+  const corrections = useGhostCorrections(chapter.manuscriptId);
+  const chapters = useChapters(chapter.manuscriptId);
   const [collapsed, setCollapsed] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   if (!flags || flags.length === 0) return null;
+  const ordered = briefOrder(chapters ?? []);
+  const shown = (f: Suggestion) => expandChapterRefs(flagText(f), ordered);
   const wholeBook = flags.filter(isWholeBook);
   const here = flags.filter((f) => !isWholeBook(f) && f.chapterId === chapter.id);
-  const open = [...wholeBook, ...here].filter((f) => f.status === "pending").length;
+  const fixes = (corrections ?? []).filter((c) => c.chapterId === chapter.id);
+  const open = [...wholeBook, ...here, ...fixes].filter((f) => f.status === "pending").length;
   const setStatus = (f: Suggestion, status: Suggestion["status"]) => void db.suggestions.update(f.id, { status });
+  const nameOf = (id: string) => {
+    const c = ordered.find((x) => x.id === id);
+    return c ? c.title || "Untitled" : "a chapter";
+  };
+
+  async function acceptFix(c: Suggestion) {
+    setProblem(null);
+    const outcome = await applySuggestion(c);
+    const message = applyProblem(outcome);
+    if (message) setProblem(message);
+    else await settleFlagIfDone(c);
+  }
+
+  async function rejectFix(c: Suggestion) {
+    setProblem(null);
+    await db.suggestions.update(c.id, { status: "rejected" });
+    await settleFlagIfDone(c);
+  }
+
+  /** A whole-book flag's Ghostwriter work: its plan, where it is, and where its corrections wait. */
+  function ghostInfo(f: Suggestion) {
+    const run = ghostRuns[f.id];
+    const waiting = (corrections ?? []).filter((c) => c.forFlag === f.id && c.status === "pending");
+    const places = [...new Set(waiting.map((c) => nameOf(c.chapterId)))];
+    if (!run && !f.ghostPlan && waiting.length === 0) return null;
+    return (
+      <div className="space-y-1 rounded bg-warning/10 px-2 py-1.5 text-xs">
+        {run?.busy ? <p className="animate-pulse">The Ghostwriter is reading the chapters concerned…</p> : null}
+        {run && !run.busy && run.text ? <p className={run.ok ? "text-foreground" : "text-destructive"}>{run.text}</p> : null}
+        {f.ghostPlan ? (
+          <p>
+            <span className="font-medium">Ghostwriter's plan:</span> {f.ghostPlan}
+          </p>
+        ) : null}
+        {waiting.length > 0 ? (
+          <p className="text-muted-foreground">
+            {waiting.length} {waiting.length === 1 ? "correction waits" : "corrections wait"} in {places.join(", ")}.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  function fixCard(c: Suggestion) {
+    const pending = c.status === "pending";
+    return (
+      <article key={c.id} className={cn("space-y-1.5 rounded-md border border-warning/50 p-2.5 text-sm", !pending && "opacity-60")}>
+        <p className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+          Ghostwriter correction
+          {pending ? null : (
+            <Badge variant={c.status === "accepted" ? "success" : "outline"}>{c.status === "accepted" ? "Accepted" : "Rejected"}</Badge>
+          )}
+        </p>
+        <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{c.original}</p>
+        <p className="rounded bg-success/10 px-2 py-1">{c.replacement}</p>
+        {c.comment ? <p className="text-xs text-muted-foreground">{c.comment}</p> : null}
+        {pending ? (
+          <div className="flex flex-wrap gap-1.5">
+            <Button size="sm" className="h-7 px-2" onClick={() => void acceptFix(c)}>
+              <Check /> Accept
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => void rejectFix(c)}>
+              <X /> Reject
+            </Button>
+          </div>
+        ) : null}
+      </article>
+    );
+  }
 
   function card(f: Suggestion) {
     const pending = f.status === "pending";
@@ -741,7 +851,8 @@ function FlagsPane({
           )}
         </p>
         {f.original ? <p className="rounded bg-muted px-2 py-1 text-xs italic">{f.original}</p> : null}
-        <p>{flagText(f)}</p>
+        <p>{shown(f)}</p>
+        {isWholeBook(f) ? ghostInfo(f) : null}
         <div className="flex flex-wrap gap-1.5">
           {pending ? (
             <>
@@ -754,8 +865,8 @@ function FlagsPane({
               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPush(f)}>
                 <PenLine /> Push to writing space
               </Button>
-              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onGhost(f)}>
-                <Ghost /> Send to Ghostwriter
+              <Button size="sm" variant="ghost" className="h-7 px-2" disabled={ghostRuns[f.id]?.busy} onClick={() => onGhost(f)}>
+                <Ghost /> {ghostRuns[f.id]?.busy ? "Ghostwriter working…" : "Send to Ghostwriter"}
               </Button>
               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onAsk(f)}>
                 <MessageSquare /> Ask the Editor
@@ -795,6 +906,13 @@ function FlagsPane({
             <div className="space-y-2">
               <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Whole book</h4>
               {wholeBook.map(card)}
+            </div>
+          ) : null}
+          {fixes.length > 0 ? (
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ghostwriter corrections in this chapter</h4>
+              {problem ? <p className="text-xs text-destructive">{problem}</p> : null}
+              {fixes.map(fixCard)}
             </div>
           ) : null}
           <div className="space-y-2">
@@ -983,7 +1101,7 @@ function ReportsMenu({
     const workflow = workflowOf(manuscript);
     const out = {} as Record<EditStage, number>;
     for (const item of EDIT_STAGES) {
-      out[item.id] = rows.filter((s) => s.source === "ai" && (s.stage === item.id || (s.stage === undefined && item.id === workflow.stage))).length;
+      out[item.id] = rows.filter((s) => s.source === "ai" && !s.forFlag && (s.stage === item.id || (s.stage === undefined && item.id === workflow.stage))).length;
     }
     return out;
   }, [manuscript.id, manuscript.editWorkflow]);
@@ -1096,6 +1214,7 @@ function ChapterReview({
   flagsPane,
   onPush,
   onGhost,
+  ghostRuns,
   chapters,
   numbers,
   onChapterChange,
@@ -1119,6 +1238,7 @@ function ChapterReview({
   onPush: (flag: Suggestion) => void;
   /** Sends a flag to the Ghostwriter. */
   onGhost: (flag: Suggestion) => void;
+  ghostRuns: Record<string, GhostRun>;
 }) {
   const ai = useAiSettings();
   const models = useEditModels();
@@ -1127,9 +1247,10 @@ function ChapterReview({
   // A question from the report or the flags pane, put in the chat box ready to send.
   const [question, setQuestion] = useState(initialQuestion);
   const flags = useDevelopmentalFlags(manuscript.id);
-  /** Open flags per chapter, shown in the chapter dropdown while the flags pane is in use. */
+  const corrections = useGhostCorrections(manuscript.id);
+  /** Open flags and Ghostwriter corrections per chapter, shown in the chapter dropdown while the flags pane is in use. */
   const openFlags = new Map<string, number>();
-  for (const f of flags ?? []) {
+  for (const f of [...(flags ?? []), ...(corrections ?? [])]) {
     if (f.status === "pending" && !isWholeBook(f)) openFlags.set(f.chapterId, (openFlags.get(f.chapterId) ?? 0) + 1);
   }
   const [selectedText, setSelectedText] = useState("");
@@ -1212,7 +1333,7 @@ function ChapterReview({
           )}
         </div>
         </div>
-        {flagsPane ? <FlagsPane chapter={chapter} label={label(chapter)} onAsk={askAbout} onPush={onPush} onGhost={onGhost} /> : null}
+        {flagsPane ? <FlagsPane chapter={chapter} label={label(chapter)} onAsk={askAbout} onPush={onPush} onGhost={onGhost} ghostRuns={ghostRuns} /> : null}
       </section>
 
       <aside className="col-start-2 row-span-2 row-start-1 flex min-h-0 w-[26rem] flex-col border-l border-border">
@@ -1268,6 +1389,10 @@ function ChapterReview({
 
 function EditBody({ manuscript }: { manuscript: Manuscript }) {
   const { chapterId, setChapterId, navigate, setPushedNote, setGhostRequest } = useApp();
+  const ai = useAiSettings();
+  const models = useEditModels();
+  const online = useOnline();
+  const [ghostRuns, setGhostRuns] = useState<Record<string, GhostRun>>({});
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
@@ -1289,16 +1414,58 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
     navigate("write");
   }
 
-  /** Opens the flag's chapter in Write with the Ghostwriter beside it, already writing a passage for the flag. */
+  /**
+   * A chapter's flag opens that chapter in Write with the Ghostwriter beside it, already writing a
+   * passage for the flag. A whole-book flag stays here: the Ghostwriter proposes corrections across
+   * the chapters concerned, which wait in the flags pane under each chapter.
+   */
   function sendToGhostwriter(note: Suggestion) {
-    const chapter = chapters?.find((c) => c.id === note.chapterId);
+    if (isWholeBook(note)) {
+      void correctWholeBook(note);
+      return;
+    }
+    const ordered = briefOrder(chapters ?? []);
+    const chapter = ordered.find((c) => c.id === note.chapterId);
+    // The chapters the flag cites, beyond its own, go with the request so the Ghostwriter can read them.
+    const others = citedChapters(note.comment, ordered).filter((c) => c.id !== note.chapterId);
+    const cited = others.map((c) => `${c.title || "Untitled"} (every word):\n${htmlToText(c.content)}`).join("\n\n");
     setChapterId(note.chapterId);
     setGhostRequest({
       chapterId: note.chapterId,
       flagId: note.id,
-      prompt: flagRequestPrompt(note.agent ?? "developmental editor", chapter?.title ?? "", flagText(note)),
+      prompt:
+        flagRequestPrompt(note.agent ?? "developmental editor", chapter?.title ?? "", expandChapterRefs(flagText(note), ordered)) +
+        (cited ? `\n\nThe other chapters this flag mentions:\n${cited}` : ""),
     });
     navigate("write");
+  }
+
+  async function correctWholeBook(note: Suggestion) {
+    const say = (run: GhostRun) => setGhostRuns((runs) => ({ ...runs, [note.id]: run }));
+    if (!ai) return say({ busy: false, ok: false, text: "Add your AI key in Settings first." });
+    if (!aiReachable(ai, online)) return say({ busy: false, ok: false, text: "You are offline. The Ghostwriter needs a connection." });
+    setShowReport(false);
+    say({ busy: true });
+    try {
+      const result = await requestWholeBookCorrections(settingsForStage(ai, models ?? {}, "ghostwriter"), manuscript, note);
+      const where = result.chapters.map((c) => c.title || "Untitled").join(", ");
+      const skipped =
+        result.dropped === 0
+          ? ""
+          : result.dropped === 1
+            ? " One other correction quoted text that isn't in its chapter, so it was left out."
+            : ` ${result.dropped} other corrections quoted text that isn't in their chapters, so they were left out.`;
+      say({
+        busy: false,
+        ok: result.saved > 0,
+        text:
+          result.saved > 0
+            ? `The Ghostwriter proposed ${result.saved} ${result.saved === 1 ? "correction" : "corrections"} in ${where}. Accept or reject each one under its chapter.${skipped}`
+            : `The Ghostwriter found no correction it could make safely.${skipped} Try again, or fix it by hand.`,
+      });
+    } catch (e) {
+      say({ busy: false, ok: false, text: e instanceof Error ? e.message : "The Ghostwriter could not answer." });
+    }
   }
 
   /** From the full report: closes it and opens the flag's chapter with the question in the chat. */
@@ -1351,6 +1518,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
             flagsPane={flagsPane}
             onPush={pushToWrite}
             onGhost={sendToGhostwriter}
+            ghostRuns={ghostRuns}
           />
         ) : (
           <div className="col-start-1 row-start-2 flex flex-col items-center justify-center gap-3 p-8 text-center">

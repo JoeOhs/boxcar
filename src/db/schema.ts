@@ -329,6 +329,10 @@ export interface Suggestion {
   comment: string;
   status: SuggestionStatus;
   createdAt: Timestamp;
+  /** A Ghostwriter correction: the whole-book developmental flag it helps fix. */
+  forFlag?: Id;
+  /** On a whole-book flag sent to the Ghostwriter: its plan for the fix (e.g. the one timeline every chapter follows). */
+  ghostPlan?: string;
 }
 
 /** The AI staff: each role of the publishing house. "dev-editor" is the developmental (structural) editor, "line-editor" the line editor, "copy-editor" the copy editor. */

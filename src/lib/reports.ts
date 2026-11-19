@@ -37,7 +37,7 @@ export async function collectStageReport(manuscript: Manuscript, stage: EditStag
   const rows = await db.suggestions.where("manuscriptId").equals(manuscript.id).toArray();
   // Items made before the workflow existed carry no pass; they belong to the pass being worked on.
   const items = rows
-    .filter((s) => s.source === "ai" && (s.stage === stage || (s.stage === undefined && stage === workflow.stage)))
+    .filter((s) => s.source === "ai" && !s.forFlag && (s.stage === stage || (s.stage === undefined && stage === workflow.stage)))
     .sort((a, b) => a.createdAt - b.createdAt);
   const info = stageInfo(stage);
   return {
