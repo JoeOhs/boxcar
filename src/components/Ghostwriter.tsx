@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Check, Send, Sparkles, Trash2, WifiOff, X } from "lucide-react";
 import { db, newId, type AgentMessage, type Id, type Manuscript } from "@/db/schema";
 import { aiReachable, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
+import { settingsForStage, useEditModels } from "@/lib/editing";
 import { genreById, genreContext } from "@/lib/genres";
 import { useChapters, useOnline, useResearchNotes } from "@/lib/hooks";
 import { outlineToText } from "@/lib/outline";
@@ -11,7 +12,7 @@ import { useOutlineItems } from "@/lib/hooks";
 import { htmlToText } from "@/lib/text";
 import { universeToText, useUniverseNodes } from "@/lib/universe";
 import { cn } from "@/lib/utils";
-import { useApp } from "@/state/AppState";
+import { useApp, type GhostRequest } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -22,8 +23,21 @@ export interface MirroredScene {
   html: string;
 }
 
+/**
+ * What the Ghostwriter is asked when a developmental flag is sent to it: a new passage,
+ * in the author's voice, that deals with the flag and can be added to the chapter.
+ */
+export function flagRequestPrompt(agent: string, chapterTitle: string, flag: string): string {
+  return (
+    `The ${agent.toLowerCase()} flagged this in the developmental edit of "${chapterTitle || "Untitled"}": "${flag}"\n\n` +
+    "Write a new passage, in my voice, that I can add to this chapter to deal with it. Reply with only the passage."
+  );
+}
+
 /** The Ghostwriter's in-progress writing: what it is typing, and where in the mirror it goes. */
 interface GhostDraft {
+  /** The developmental flag this writing answers; pushing it in marks the flag Accepted. */
+  flagId?: Id;
   /** The scene it continues. null = the end of the chapter. */
   sceneId: Id | null;
   /** The whole reply. */
@@ -39,7 +53,9 @@ function GhostBlock({ draft }: { draft: GhostDraft }) {
   const typed = draft.full.slice(0, draft.shown);
   return (
     <div className="my-3 rounded-md border-2 border-dashed border-warning/70 bg-warning/15 px-3 py-2" aria-label="The Ghostwriter's writing">
-      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-warning">Ghostwriter · not in your manuscript yet</p>
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-warning">
+        Ghostwriter{draft.flagId ? " · for a developmental flag" : ""} · not in your manuscript yet
+      </p>
       <p className="whitespace-pre-wrap">
         {typed}
         {draft.done ? null : <span className="animate-pulse">▌</span>}
@@ -62,6 +78,8 @@ export function Ghostwriter({
   scenes,
   selectedSceneId,
   onAppend,
+  request,
+  onRequestTaken,
 }: {
   manuscript: Manuscript;
   /** The open chapter; its mirror is cleared of unreviewed writing when it changes. */
@@ -71,9 +89,15 @@ export function Ghostwriter({
   /** The scene the author is working in; the Ghostwriter's writing continues it. */
   selectedSceneId?: Id;
   onAppend: (sceneId: Id | null, text: string) => void;
+  /** A flag sent from the Edit screen: the Ghostwriter starts writing for it as soon as it can. */
+  request?: GhostRequest | null;
+  /** Called once the request is taken, so it is not written twice. */
+  onRequestTaken?: () => void;
 }) {
   const { navigate } = useApp();
   const ai = useAiSettings();
+  // The Ghostwriter runs on the model chosen for it in Settings, under Editing team.
+  const models = useEditModels();
   const online = useOnline();
   const reachable = aiReachable(ai, online);
   const research = useResearchNotes(manuscript.id);
@@ -86,6 +110,8 @@ export function Ghostwriter({
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
+  // The request already taken, so a re-render (or React's double check in development) never asks twice.
+  const takenRef = useRef<GhostRequest | null>(null);
 
   const messages = useLiveQuery(
     async () => {
@@ -147,7 +173,15 @@ export function Ghostwriter({
     return parts.filter(Boolean).join("\n\n");
   }
 
-  async function ask(text: string) {
+  // A flag sent from the Edit screen is written for as soon as the key, the connection and the models are ready.
+  useEffect(() => {
+    if (!request || takenRef.current === request || !ai || !reachable || models === undefined || busy) return;
+    takenRef.current = request;
+    onRequestTaken?.();
+    void ask(request.prompt, request.flagId);
+  }, [request, ai, reachable, models, busy]);
+
+  async function ask(text: string, flagId?: Id) {
     const content = text.trim();
     if (!content || !ai || busy) return;
     setBusy(true);
@@ -169,7 +203,7 @@ export function Ghostwriter({
         content: message.text,
       }));
       while (turns.length > 0 && turns[0].role !== "user") turns.shift();
-      const reply = await askAi(ai, systemPrompt("ghostwriter", context()), turns);
+      const reply = await askAi(models ? settingsForStage(ai, models, "ghostwriter") : ai, systemPrompt("ghostwriter", context()), turns);
       await db.agentMessages.add({
         id: newId(),
         manuscriptId: manuscript.id,
@@ -178,7 +212,7 @@ export function Ghostwriter({
         text: reply,
         createdAt: Date.now(),
       });
-      setGhost({ sceneId: selectedSceneId ?? null, full: reply, shown: 0, done: false });
+      setGhost({ flagId, sceneId: selectedSceneId ?? null, full: reply, shown: 0, done: false });
     } catch (e) {
       setError(e instanceof Error ? e.message : "The Ghostwriter could not answer.");
     } finally {
@@ -186,10 +220,14 @@ export function Ghostwriter({
     }
   }
 
-  /** Ticking the check box pushes the Ghostwriter's finished writing into the author's chapter. */
+  /**
+   * Ticking the check box pushes the Ghostwriter's finished writing into the author's chapter.
+   * Writing for a developmental flag also marks that flag Accepted (Undo in the flags pane reverses it).
+   */
   function push() {
     if (!ghost?.done) return;
     onAppend(ghost.sceneId, ghost.full);
+    if (ghost.flagId) void db.suggestions.update(ghost.flagId, { status: "accepted" });
     setGhost(null);
   }
 
@@ -226,7 +264,10 @@ export function Ghostwriter({
         {ghost?.done ? (
           <div className="sticky top-2 z-10 flex justify-end pr-3">
             <div className="flex items-center gap-1 rounded-md border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur-sm">
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium" title="Push the highlighted writing into your chapter">
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-xs font-medium"
+                title={ghost.flagId ? "Push the highlighted writing into your chapter; the flag is marked Accepted" : "Push the highlighted writing into your chapter"}
+              >
                 <input type="checkbox" className="size-3.5 accent-primary" onChange={push} />
                 <Check className="size-3.5" /> Push into your chapter
               </label>

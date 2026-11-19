@@ -24,7 +24,7 @@ Supporting screens (not must-haves on their own):
 ## Supporting code
 - `src/lib/store.ts`: write operations (create/patch workspaces, manuscripts, outline items, chapters, snapshots).
 - `src/lib/epub.ts`: `buildEpub` (EPUB 3 + NCX, cover, TOC, KDP metadata via JSZip), `buildCss` and `buildPreviewDocument` (shared by preview and export).
-- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestStageReview`, `requestFormatPreset`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`.
+- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestStageReview`, `requestFormatPreset`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`. Every AI reply bubble has three buttons: Copy (to the clipboard), Reply (quotes the start of that reply above the message box and sends it in front of the author’s answer) and Send to Universe (the orbit icon), which pins the reply to the Cork board with `createCorkNote` (`src/lib/corkboard.ts`).
 - `src/lib/text.ts`, `chapters.ts`, `outline.ts`, `hooks.ts`, `download.ts`: helpers.
 - `public/sw.js` and `public/manifest.webmanifest`: let the built app open with no connection.
 

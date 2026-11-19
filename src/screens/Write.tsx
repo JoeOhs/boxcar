@@ -504,7 +504,7 @@ function ChapterDesk({
   onMoveScene: (sceneId: Id, targetChapterId: Id) => void;
 }) {
   const draft = useChapterDraft(chapter);
-  const { setFlusher, pushedNote, setPushedNote } = useApp();
+  const { setFlusher, pushedNote, setPushedNote, ghostRequest, setGhostRequest } = useApp();
   const phase = manuscriptPhase(manuscript);
   const selectedScene = draft.scenes.find((scene) => scene.id === draft.selectedId) ?? draft.scenes[0];
   // The chapter as it is on the page now (including unsaved typing), read aloud by the listening bar.
@@ -587,6 +587,8 @@ function ChapterDesk({
             const target = sceneId && draft.scenes.some((scene) => scene.id === sceneId) ? sceneId : selectedScene.id;
             draft.appendToScene(target, text);
           }}
+          request={ghostRequest?.chapterId === chapter.id ? ghostRequest : null}
+          onRequestTaken={() => setGhostRequest(null)}
         />
       ) : null}
     </>
@@ -594,8 +596,12 @@ function ChapterDesk({
 }
 
 function WriteBody({ manuscript }: { manuscript: Manuscript }) {
-  const { chapterId, setChapterId } = useApp();
-  const [ghostwriterOpen, setGhostwriterOpen] = useState(false);
+  const { chapterId, setChapterId, ghostRequest } = useApp();
+  // A flag sent from the Edit screen opens the Ghostwriter beside the chapter.
+  const [ghostwriterOpen, setGhostwriterOpen] = useState(() => ghostRequest !== null);
+  useEffect(() => {
+    if (ghostRequest) setGhostwriterOpen(true);
+  }, [ghostRequest]);
   const [researchOpen, setResearchOpen] = useState(false);
   const [listenOpen, setListenOpen] = useState(false);
   // Bumped after a scene has been moved between chapters, so the open chapter reloads its scenes.

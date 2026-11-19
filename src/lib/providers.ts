@@ -1,4 +1,4 @@
-import type { AiProvider, EditStage } from "@/db/schema";
+import type { AiProvider, EditStage, ModelSlot } from "@/db/schema";
 
 /**
  * The AI providers the AI staff can run on, and every model id the app uses.
@@ -58,7 +58,7 @@ export const OLLAMA_CLOUD_MODELS = [
 ];
 
 /** A different model for each editing pass out of the box. An empty entry means "use the model on the key". */
-export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<EditStage, string>>> = {
+export const DEFAULT_STAGE_MODEL: Record<AiProvider, Partial<Record<ModelSlot, string>>> = {
   openai: { developmental: "gpt-6.1-terra", line: "gpt-6.1-sol", copy: "gpt-6-luna", proofread: "gpt-6-sol" },
   anthropic: {
     developmental: "claude-fable-5-1",

@@ -228,6 +228,27 @@ export interface UniverseNode {
   updatedAt: Timestamp;
 }
 
+/** The paper colours a cork board note can have. */
+export type CorkNoteColor = "yellow" | "pink" | "blue" | "green";
+
+/**
+ * One note pinned to a book's Cork board, on the Universe screen. Most arrive from an
+ * AI chat bubble ("Send to Universe"); the author can also pin their own.
+ */
+export interface CorkNote {
+  id: Id;
+  manuscriptId: Id;
+  text: string;
+  /** The AI role whose reply this note came from; absent for a note the author wrote. */
+  fromRole?: AgentRole;
+  color: CorkNoteColor;
+  /** Position of the note's top-left corner on the board, in pixels. */
+  x: number;
+  y: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 /** One written section of the book: front matter, a chapter, or back matter. */
 export interface Chapter {
   id: Id;
@@ -422,11 +443,14 @@ export interface ResearchNote {
   updatedAt: Timestamp;
 }
 
+/** An AI agent whose model the author chooses in Settings: each editing pass, and the Ghostwriter. */
+export type ModelSlot = EditStage | "ghostwriter";
+
 /**
- * The model the author picked for each editing pass, per provider (a model name
- * only makes sense for the provider it belongs to). Stored under key "editModels".
+ * The model the author picked for each editing pass and the Ghostwriter, per provider
+ * (a model name only makes sense for the provider it belongs to). Stored under key "editModels".
  */
-export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
+export type EditModels = Partial<Record<AiProvider, Partial<Record<ModelSlot, string>>>>;
 
 /** App-wide preferences as key/value pairs ("editModels", "keyVaultKey", "activeKey:text", "activeKey:image", "activeWorkspaceId", "theme", "customWords"). */
 export interface Setting {
@@ -452,6 +476,7 @@ export class BoxcarDB extends Dexie {
   roadmapCards!: Table<RoadmapCard, Id>;
   researchNotes!: Table<ResearchNote, Id>;
   universeNodes!: Table<UniverseNode, Id>;
+  corkNotes!: Table<CorkNote, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -500,6 +525,10 @@ export class BoxcarDB extends Dexie {
         const nodes = old.map(storyEntryToNode);
         if (nodes.length > 0) await tx.table("universeNodes").bulkAdd(nodes);
       });
+    // Version 8 adds the Cork board: notes sent from the AI chats, pinned on the Universe screen.
+    this.version(8).stores({
+      corkNotes: "id, manuscriptId, updatedAt",
+    });
   }
 }
 
@@ -541,9 +570,9 @@ export async function getEditModels(): Promise<EditModels> {
   return (await getSetting<EditModels>("editModels")) ?? {};
 }
 
-export async function saveEditModel(provider: AiProvider, stage: EditStage, model: string): Promise<void> {
+export async function saveEditModel(provider: AiProvider, slot: ModelSlot, model: string): Promise<void> {
   const all = await getEditModels();
-  await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [stage]: model } });
+  await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [slot]: model } });
 }
 
 /**
@@ -596,6 +625,7 @@ function manuscriptTables() {
     db.roadmapCards,
     db.researchNotes,
     db.universeNodes,
+    db.corkNotes,
   ];
 }
 
@@ -612,6 +642,7 @@ async function removeManuscript(manuscriptId: Id, removed: Set<Id>): Promise<voi
   await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
   await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
   await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.corkNotes.where("manuscriptId").equals(manuscriptId).delete();
   await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
   await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
   await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();

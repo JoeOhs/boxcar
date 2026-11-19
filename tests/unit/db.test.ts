@@ -5,6 +5,7 @@ import {
 } from "@/db/schema";
 import { addOutlineItem, createSeries, createWorkspace, patchOutlineItem, snapshotChapter } from "@/lib/store";
 import { createUniverseNode } from "@/lib/universe";
+import { createCorkNote } from "@/lib/corkboard";
 import { createTranslation } from "@/lib/translate";
 import { chapter, counts, seedBook } from "./helpers";
 
@@ -33,7 +34,7 @@ describe("migrations", () => {
 
     const fresh = new BoxcarDB(name);
     await fresh.open();
-    expect(fresh.verno).toBe(7);
+    expect(fresh.verno).toBe(8);
     expect(await fresh.workspaces.count()).toBe(1);
     expect((await fresh.manuscripts.get("m"))?.title).toBe("T");
     expect((await fresh.chapters.get("c"))?.content).toBe("<p>hi</p>");
@@ -83,6 +84,7 @@ async function fullBook() {
   await db.researchNotes.add({ id: newId(), manuscriptId: m.id, kind: "note", title: "r", content: "", url: "", shareWithGhostwriter: true, createdAt: 1, updatedAt: 1 });
   await db.storyEntries.add({ id: newId(), manuscriptId: m.id, kind: "character", name: "a", description: "", createdAt: 1, updatedAt: 1 });
   await createUniverseNode(m.id, "character");
+  await createCorkNote(m.id, "pin me", "dev-editor");
   const item = await addOutlineItem(m.id, null);
   await patchOutlineItem(item.id, { chapterId: c.id });
   await createTranslation(m, { code: "es", name: "Spanish" });
@@ -94,7 +96,7 @@ describe("cascade deletes", () => {
     const { m, ws } = await fullBook();
     await deleteManuscript(m.id);
     const c = await counts();
-    for (const t of ["manuscripts", "chapters", "revisions", "suggestions", "agentMessages", "coverConcepts", "roadmapCards", "researchNotes", "storyEntries", "universeNodes", "outlineItems"]) {
+    for (const t of ["manuscripts", "chapters", "revisions", "suggestions", "agentMessages", "coverConcepts", "roadmapCards", "researchNotes", "storyEntries", "universeNodes", "corkNotes", "outlineItems"]) {
       expect([t, c[t]]).toEqual([t, 0]);
     }
     expect(await db.workspaces.get(ws.id)).toBeDefined();

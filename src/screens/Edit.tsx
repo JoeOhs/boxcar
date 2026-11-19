@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, ChevronLeft, ChevronRight, FileDown, FileText, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, FileDown, Ghost, FileText, History, Lock, MessageSquare, PenLine, RotateCcw, Sparkles, Trash2, X } from "lucide-react";
 import {
   db,
   newId,
@@ -36,6 +36,7 @@ import { diffParagraphs, htmlToText, replaceInHtml, textToParagraphs } from "@/l
 import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
+import { flagRequestPrompt } from "@/components/Ghostwriter";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -328,12 +329,15 @@ export function DevelopmentalReport({
   onOpenChapter,
   onAsk,
   onPush,
+  onGhost,
   onClose,
 }: {
   manuscript: Manuscript;
   onOpenChapter: (chapterId: string) => void;
   onAsk: (note: Suggestion) => void;
   onPush: (note: Suggestion) => void;
+  /** Sends a flag to the Ghostwriter, which writes a passage that deals with it. */
+  onGhost: (note: Suggestion) => void;
   /** Closes the report; the chapter underneath was never left. */
   onClose: () => void;
 }) {
@@ -408,6 +412,9 @@ export function DevelopmentalReport({
                     <div className="flex flex-wrap gap-1.5 opacity-70 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <Button size="sm" onClick={() => onPush(note)}>
                         <PenLine /> Push to writing space
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onGhost(note)}>
+                        <Ghost /> Send to Ghostwriter
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => onAsk(note)}>
                         <MessageSquare /> Ask the Editor
@@ -706,12 +713,14 @@ function FlagsPane({
   label,
   onAsk,
   onPush,
+  onGhost,
 }: {
   chapter: Chapter;
   /** The chapter's name as the page shows it, e.g. "Chapter 3: The Crossing". */
   label: string;
   onAsk: (flag: Suggestion) => void;
   onPush: (flag: Suggestion) => void;
+  onGhost: (flag: Suggestion) => void;
 }) {
   const flags = useDevelopmentalFlags(chapter.manuscriptId);
   const [collapsed, setCollapsed] = useState(false);
@@ -744,6 +753,9 @@ function FlagsPane({
               </Button>
               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onPush(f)}>
                 <PenLine /> Push to writing space
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onGhost(f)}>
+                <Ghost /> Send to Ghostwriter
               </Button>
               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onAsk(f)}>
                 <MessageSquare /> Ask the Editor
@@ -977,6 +989,7 @@ function ReportsMenu({
   }, [manuscript.id, manuscript.editWorkflow]);
 
   const [exportingDraft, setExportingDraft] = useState(false);
+  const { completed } = workflowOf(manuscript);
 
   /** Writes the whole book as a Word file for a human editor, with the text as it is now. */
   async function exportDraft() {
@@ -1017,8 +1030,18 @@ function ReportsMenu({
       {EDIT_STAGES.map((item) => {
         const count = counts?.[item.id] ?? 0;
         const active = viewStage === item.id;
+        // A finished pass's report is complete: it gets a border so it stands apart from ones still being written.
+        const complete = completed.includes(item.id);
         return (
-          <div key={item.id} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors", active ? "bg-accent" : "hover:bg-accent/50")}>
+          <div
+            key={item.id}
+            title={complete ? "This pass is finished" : undefined}
+            className={cn(
+              "flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm transition-colors",
+              complete ? "border-success/60" : "border-transparent",
+              active ? "bg-accent" : "hover:bg-accent/50",
+            )}
+          >
             <button className="min-w-0 flex-1 text-left" onClick={() => onView(item.id)} aria-pressed={active}>
               <span className="block truncate font-medium">{REPORT_TITLE[item.id]}</span>
               <span className="block text-xs text-muted-foreground">
@@ -1072,6 +1095,7 @@ function ChapterReview({
   onOpenReport,
   flagsPane,
   onPush,
+  onGhost,
   chapters,
   numbers,
   onChapterChange,
@@ -1093,6 +1117,8 @@ function ChapterReview({
   flagsPane: boolean;
   /** Sends a flag to the writing space. */
   onPush: (flag: Suggestion) => void;
+  /** Sends a flag to the Ghostwriter. */
+  onGhost: (flag: Suggestion) => void;
 }) {
   const ai = useAiSettings();
   const models = useEditModels();
@@ -1186,7 +1212,7 @@ function ChapterReview({
           )}
         </div>
         </div>
-        {flagsPane ? <FlagsPane chapter={chapter} label={label(chapter)} onAsk={askAbout} onPush={onPush} /> : null}
+        {flagsPane ? <FlagsPane chapter={chapter} label={label(chapter)} onAsk={askAbout} onPush={onPush} onGhost={onGhost} /> : null}
       </section>
 
       <aside className="col-start-2 row-span-2 row-start-1 flex min-h-0 w-[26rem] flex-col border-l border-border">
@@ -1241,7 +1267,7 @@ function ChapterReview({
 }
 
 function EditBody({ manuscript }: { manuscript: Manuscript }) {
-  const { chapterId, setChapterId, navigate, setPushedNote } = useApp();
+  const { chapterId, setChapterId, navigate, setPushedNote, setGhostRequest } = useApp();
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
@@ -1259,6 +1285,18 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
     setPushedNote({
       chapterId: note.chapterId,
       text: `${note.agent ? `${note.agent}: ` : ""}${note.comment.replace(/^Whole book:\s*/, "")}`,
+    });
+    navigate("write");
+  }
+
+  /** Opens the flag's chapter in Write with the Ghostwriter beside it, already writing a passage for the flag. */
+  function sendToGhostwriter(note: Suggestion) {
+    const chapter = chapters?.find((c) => c.id === note.chapterId);
+    setChapterId(note.chapterId);
+    setGhostRequest({
+      chapterId: note.chapterId,
+      flagId: note.id,
+      prompt: flagRequestPrompt(note.agent ?? "developmental editor", chapter?.title ?? "", flagText(note)),
     });
     navigate("write");
   }
@@ -1312,6 +1350,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
             onOpenReport={() => setShowReport(true)}
             flagsPane={flagsPane}
             onPush={pushToWrite}
+            onGhost={sendToGhostwriter}
           />
         ) : (
           <div className="col-start-1 row-start-2 flex flex-col items-center justify-center gap-3 p-8 text-center">
@@ -1329,6 +1368,7 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
             onOpenChapter={openChapter}
             onAsk={askAbout}
             onPush={pushToWrite}
+            onGhost={sendToGhostwriter}
             onClose={() => setShowReport(false)}
           />
         </div>

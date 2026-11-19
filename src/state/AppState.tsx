@@ -43,8 +43,19 @@ interface AppState {
   /** A note a developmental flag was pushed to the writing space with. */
   pushedNote: { chapterId: Id; text: string } | null;
   setPushedNote: (note: { chapterId: Id; text: string } | null) => void;
+  /** A developmental flag sent to the Ghostwriter: the Write screen opens it and the Ghostwriter starts writing. */
+  ghostRequest: GhostRequest | null;
+  setGhostRequest: (request: GhostRequest | null) => void;
   theme: Theme;
   toggleTheme: () => void;
+}
+
+/** A flag for the Ghostwriter to write a passage for, in its chapter. */
+export interface GhostRequest {
+  chapterId: Id;
+  flagId: Id;
+  /** What the Ghostwriter is asked, shown in its conversation. */
+  prompt: string;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -56,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // The workspace picked in this session; it wins over the saved choice while the saved one is still being written.
   const [pickedId, setPickedId] = useState<Id | null>(null);
   const [pushedNote, setPushedNote] = useState<{ chapterId: Id; text: string } | null>(null);
+  const [ghostRequest, setGhostRequest] = useState<GhostRequest | null>(null);
   const online = useOnline();
   // The Write screen keeps its unsaved draft here, so bringing another book to
   // the workspace saves the old one first.
@@ -107,6 +119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPickedId(id);
         setChapterId(null);
         setPushedNote(null);
+        setGhostRequest(null);
         setEntered(true);
       })();
     },
@@ -119,6 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await setSetting("activeManuscriptId", id);
         setChapterId(null);
         setPushedNote(null);
+        setGhostRequest(null);
       })();
     },
     [flush],
@@ -156,6 +170,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectManuscript,
     pushedNote,
     setPushedNote,
+    ghostRequest,
+    setGhostRequest,
     theme,
     toggleTheme,
   };

@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript } from "@/db/schema";
+import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript, type ModelSlot } from "@/db/schema";
 import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL } from "./providers";
 import { syncEditCards } from "./roadmap";
 import { patchManuscript } from "./store";
@@ -76,11 +76,11 @@ export function stageInfo(stage: EditStage): StageInfo {
  * The model for one pass: the author's choice, else the default for that pass, else the
  * model on the author's key (providers such as Ollama have no defaults of their own).
  */
-export function modelForStage(provider: AiProvider, models: EditModels, stage: EditStage, keyModel = ""): string {
+export function modelForStage(provider: AiProvider, models: EditModels, stage: ModelSlot, keyModel = ""): string {
   return models[provider]?.[stage]?.trim() || DEFAULT_STAGE_MODEL[provider][stage] || keyModel || DEFAULT_MODEL[provider];
 }
-/** The AI settings to use for one pass: the author's key and provider with that pass's model. */
-export function settingsForStage(settings: AiSettings, models: EditModels, stage: EditStage): AiSettings {
+/** The AI settings to use for one pass (or the Ghostwriter): the author's key and provider with its chosen model. */
+export function settingsForStage(settings: AiSettings, models: EditModels, stage: ModelSlot): AiSettings {
   return { ...settings, model: modelForStage(settings.provider, models, stage, settings.model) };
 }
 

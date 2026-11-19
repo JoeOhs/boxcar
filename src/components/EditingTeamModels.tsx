@@ -25,15 +25,15 @@ export function EditingTeamModels() {
     <Card className="max-w-xl space-y-4 p-5">
       <div className="flex items-center gap-2">
         <Users className="size-4 text-muted-foreground" />
-        <h2 className="text-sm font-medium">Editing team</h2>
+        <h2 className="text-sm font-medium">Editing team and Ghostwriter</h2>
       </div>
       {ai === undefined || models === undefined ? null : ai === null ? (
-        <p className="text-sm text-muted-foreground">Add an AI staff key above, then choose a model for each editor here.</p>
+        <p className="text-sm text-muted-foreground">Add an AI staff key above, then choose a model for each editor and the Ghostwriter here.</p>
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            Each editor can run on a different {PROVIDER_LABEL[ai.provider]} model. A stronger model suits the big-picture
-            passes; a faster one is often enough for proofreading.
+            Each editor, and the Ghostwriter, can run on a different {PROVIDER_LABEL[ai.provider]} model. A stronger model suits
+            the big-picture passes; a faster one is often enough for proofreading.
           </p>
           <div className="space-y-3">
             {EDIT_STAGES.map((stage) => (
@@ -51,6 +51,19 @@ export function EditingTeamModels() {
                 />
               </div>
             ))}
+            <div className="grid grid-cols-[1fr_14rem] items-center gap-3 border-t border-border pt-3">
+              <div>
+                <Label htmlFor="team-model-ghostwriter">{AGENT_LABEL.ghostwriter}</Label>
+                <p className="text-xs text-muted-foreground">Writes beside you in Write, and writes passages for flags sent to it.</p>
+              </div>
+              <ModelSelect
+                id="team-model-ghostwriter"
+                className="h-8 text-xs"
+                options={MODEL_SUGGESTIONS[ai.provider]}
+                value={modelForStage(ai.provider, models, "ghostwriter", ai.model)}
+                onChange={(model) => void saveEditModel(ai.provider, "ghostwriter", model)}
+              />
+            </div>
           </div>
         </>
       )}
