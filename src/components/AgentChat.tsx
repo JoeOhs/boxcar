@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Send, Sparkles, Trash2, WifiOff } from "lucide-react";
+import { Check, Copy, Orbit, Reply, Send, Sparkles, Trash2, WifiOff, X } from "lucide-react";
 import { db, newId, type AgentMessage, type AgentRole, type Id } from "@/db/schema";
 import { aiReachable, AGENT_LABEL, askAi, systemPrompt, useAiSettings, type ChatTurn } from "@/lib/ai";
+import { createCorkNote } from "@/lib/corkboard";
 import { useOnline } from "@/lib/hooks";
 import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,11 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  /** The reply the author is answering, quoted above the message box. */
+  const [replyTo, setReplyTo] = useState<AgentMessage | null>(null);
+  /** Brief confirmation on a bubble after Copy or Send to Universe. */
+  const [done, setDone] = useState<{ id: Id; what: "copied" | "pinned" } | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = useLiveQuery(
     async () => {
@@ -48,9 +54,35 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages?.length, busy]);
 
-  async function send(text: string) {
-    const content = text.trim();
-    if (!content || !ai || busy) return;
+  function flash(id: Id, what: "copied" | "pinned") {
+    setDone({ id, what });
+    window.setTimeout(() => setDone((current) => (current?.id === id && current.what === what ? null : current)), 1600);
+  }
+
+  async function copy(m: AgentMessage) {
+    try {
+      await navigator.clipboard.writeText(m.text);
+      flash(m.id, "copied");
+    } catch {
+      setError("The reply could not be copied. Select the text and copy it by hand.");
+    }
+  }
+
+  async function sendToUniverse(m: AgentMessage) {
+    await createCorkNote(manuscriptId, m.text, role);
+    flash(m.id, "pinned");
+  }
+
+  function startReply(m: AgentMessage) {
+    setReplyTo(m);
+    inputRef.current?.focus();
+  }
+
+  async function send(text: string, quoting: AgentMessage | null = null) {
+    const typed = text.trim();
+    if (!typed || !ai || busy) return;
+    // A reply carries the passage it answers as a quote, so the AI knows what "this" refers to.
+    const content = quoting ? quoteOf(quoting.text) + "\n\n" + typed : typed;
     setBusy(true);
     setError(null);
     const userMessage: AgentMessage = {
@@ -64,6 +96,7 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
     try {
       await db.agentMessages.add(userMessage);
       setDraft("");
+      setReplyTo(null);
       const history = [...(messages ?? []), userMessage].slice(-12);
       const turns: ChatTurn[] = history.map((m) => ({
         role: m.from === "user" ? "user" : "assistant",
@@ -127,6 +160,22 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
                   {onUseReply.label}
                 </Button>
               ) : null}
+              {m.from === "agent" ? (
+                <div className="-mb-1 mt-1.5 flex items-center gap-0.5 text-muted-foreground">
+                  <BubbleAction title="Copy" onClick={() => void copy(m)}>
+                    {done?.id === m.id && done.what === "copied" ? <Check /> : <Copy />}
+                  </BubbleAction>
+                  <BubbleAction title="Reply to this" onClick={() => startReply(m)}>
+                    <Reply />
+                  </BubbleAction>
+                  <BubbleAction title="Send to Universe (pins it to the Cork board)" onClick={() => void sendToUniverse(m)}>
+                    {done?.id === m.id && done.what === "pinned" ? <Check /> : <Orbit />}
+                  </BubbleAction>
+                  {done?.id === m.id ? (
+                    <span className="ml-1 text-[11px]">{done.what === "copied" ? "Copied" : "Pinned to the Cork board"}</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}
@@ -165,26 +214,63 @@ export function AgentChat({ manuscriptId, role, getContext, persona, model, quic
             ))}
           </div>
         ) : null}
+        {replyTo ? (
+          <div className="flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+            <Reply className="mt-0.5 size-3 shrink-0" />
+            <span className="line-clamp-2 min-w-0 flex-1">{excerpt(replyTo.text)}</span>
+            <button type="button" title="Cancel the reply" aria-label="Cancel the reply" onClick={() => setReplyTo(null)}>
+              <X className="size-3" />
+            </button>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
+            ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                void send(draft);
+                void send(draft, replyTo);
               }
+              if (e.key === "Escape" && replyTo) setReplyTo(null);
             }}
             hint={`Message the ${AGENT_LABEL[role].toLowerCase()}`}
             className="min-h-10 resize-none"
             rows={2}
             disabled={!ai}
           />
-          <Button size="icon" title="Send" disabled={!ai || busy || !reachable || !draft.trim()} onClick={() => void send(draft)}>
+          <Button size="icon" title="Send" disabled={!ai || busy || !reachable || !draft.trim()} onClick={() => void send(draft, replyTo)}>
             <Send />
           </Button>
         </div>
       </div>
     </div>
   );
+}
+
+/** A small icon button under an AI reply. */
+function BubbleAction({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="rounded p-1 transition-colors hover:bg-background hover:text-foreground [&_svg]:size-3.5"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The start of a reply, on one line, for the quote above the message box. */
+function excerpt(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 160 ? flat.slice(0, 157).trimEnd() + "..." : flat;
+}
+
+/** The quoted passage put in front of the author's answer. */
+function quoteOf(text: string): string {
+  return "> " + excerpt(text);
 }

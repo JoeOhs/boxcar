@@ -228,6 +228,27 @@ export interface UniverseNode {
   updatedAt: Timestamp;
 }
 
+/** The paper colours a cork board note can have. */
+export type CorkNoteColor = "yellow" | "pink" | "blue" | "green";
+
+/**
+ * One note pinned to a book's Cork board, on the Universe screen. Most arrive from an
+ * AI chat bubble ("Send to Universe"); the author can also pin their own.
+ */
+export interface CorkNote {
+  id: Id;
+  manuscriptId: Id;
+  text: string;
+  /** The AI role whose reply this note came from; absent for a note the author wrote. */
+  fromRole?: AgentRole;
+  color: CorkNoteColor;
+  /** Position of the note's top-left corner on the board, in pixels. */
+  x: number;
+  y: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 /** One written section of the book: front matter, a chapter, or back matter. */
 export interface Chapter {
   id: Id;
@@ -244,8 +265,26 @@ export interface Chapter {
   sourceChapterId?: Id;
   /** For a translated chapter: where it is in its review. */
   translationState?: TranslationState;
+  /**
+   * For a translated chapter: true when the original chapter it was translated from has
+   * been deleted. The translation is kept for the author to decide on (F15).
+   */
+  sourceDeleted?: boolean;
+  /**
+   * The AI-written summary the developmental editors read in place of the full text.
+   * Made from every word of the chapter; reused until the chapter's text changes.
+   */
+  devSummary?: ChapterSummary;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/** A chapter summary for the developmental editors, tied to the exact text it was made from. */
+export interface ChapterSummary {
+  text: string;
+  /** Fingerprint of the chapter text the summary was made from; a different fingerprint means the summary is stale. */
+  sourceHash: string;
+  createdAt: Timestamp;
 }
 
 /** A saved copy of a chapter's text so edits can be compared and restored. */
@@ -290,6 +329,10 @@ export interface Suggestion {
   comment: string;
   status: SuggestionStatus;
   createdAt: Timestamp;
+  /** A Ghostwriter correction: the whole-book developmental flag it helps fix. */
+  forFlag?: Id;
+  /** On a whole-book flag sent to the Ghostwriter: its plan for the fix (e.g. the one timeline every chapter follows). */
+  ghostPlan?: string;
 }
 
 /** The AI staff: each role of the publishing house. "dev-editor" is the developmental (structural) editor, "line-editor" the line editor, "copy-editor" the copy editor. */
@@ -378,6 +421,8 @@ export interface RoadmapCard {
   screen?: "outline" | "write" | "edit" | "format" | "cover" | "export";
   /** An optional card does not hold up the stage: the author may skip it. */
   optional?: boolean;
+  /** The editing pass this card stands for. Such a card is ticked by finishing the pass in Edit, not by hand. */
+  editStage?: EditStage;
   done: boolean;
   /** Position within the column; sort ascending. */
   order: number;
@@ -402,11 +447,14 @@ export interface ResearchNote {
   updatedAt: Timestamp;
 }
 
+/** An AI agent whose model the author chooses in Settings: each editing pass, and the Ghostwriter. */
+export type ModelSlot = EditStage | "ghostwriter";
+
 /**
- * The model the author picked for each editing pass, per provider (a model name
- * only makes sense for the provider it belongs to). Stored under key "editModels".
+ * The model the author picked for each editing pass and the Ghostwriter, per provider
+ * (a model name only makes sense for the provider it belongs to). Stored under key "editModels".
  */
-export type EditModels = Partial<Record<AiProvider, Partial<Record<EditStage, string>>>>;
+export type EditModels = Partial<Record<AiProvider, Partial<Record<ModelSlot, string>>>>;
 
 /** App-wide preferences as key/value pairs ("editModels", "keyVaultKey", "activeKey:text", "activeKey:image", "activeWorkspaceId", "theme", "customWords"). */
 export interface Setting {
@@ -432,6 +480,7 @@ export class BoxcarDB extends Dexie {
   roadmapCards!: Table<RoadmapCard, Id>;
   researchNotes!: Table<ResearchNote, Id>;
   universeNodes!: Table<UniverseNode, Id>;
+  corkNotes!: Table<CorkNote, Id>;
   settings!: Table<Setting, string>;
 
   constructor(name = "boxcar-studio") {
@@ -476,30 +525,34 @@ export class BoxcarDB extends Dexie {
         universeNodes: "id, manuscriptId, kind, updatedAt",
       })
       .upgrade(async (tx) => {
-        const old = (await tx.table("storyEntries").toArray()) as {
-          id: Id;
-          manuscriptId: Id;
-          kind: string;
-          name: string;
-          description: string;
-          createdAt: Timestamp;
-          updatedAt: Timestamp;
-        }[];
-        const nodes: UniverseNode[] = old.map((entry) => ({
-          id: entry.id,
-          manuscriptId: entry.manuscriptId,
-          kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
-          name: entry.name,
-          summary: entry.description,
-          tags: [],
-          fields: [],
-          links: [],
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt,
-        }));
+        const old = (await tx.table("storyEntries").toArray()) as StoryEntry[];
+        const nodes = old.map(storyEntryToNode);
         if (nodes.length > 0) await tx.table("universeNodes").bulkAdd(nodes);
       });
+    // Version 8 adds the Cork board: notes sent from the AI chats, pinned on the Universe screen.
+    this.version(8).stores({
+      corkNotes: "id, manuscriptId, updatedAt",
+    });
   }
+}
+
+/**
+ * A story-info entry (database version 6) as a Universe node. Used by the version 7
+ * upgrade and when a backup made before version 7 is opened.
+ */
+export function storyEntryToNode(entry: StoryEntry): UniverseNode {
+  return {
+    id: entry.id,
+    manuscriptId: entry.manuscriptId,
+    kind: entry.kind === "character" || entry.kind === "location" || entry.kind === "situation" ? entry.kind : "concept",
+    name: entry.name,
+    summary: entry.description,
+    tags: [],
+    fields: [],
+    links: [],
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+  };
 }
 
 export const db = new BoxcarDB();
@@ -521,62 +574,95 @@ export async function getEditModels(): Promise<EditModels> {
   return (await getSetting<EditModels>("editModels")) ?? {};
 }
 
-export async function saveEditModel(provider: AiProvider, stage: EditStage, model: string): Promise<void> {
+export async function saveEditModel(provider: AiProvider, slot: ModelSlot, model: string): Promise<void> {
   const all = await getEditModels();
-  await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [stage]: model } });
+  await setSetting<EditModels>("editModels", { ...all, [provider]: { ...all[provider], [slot]: model } });
 }
 
 /**
  * Delete a manuscript and everything that belongs to it. Deleting a series also
  * deletes its books, and deleting a book also deletes its translations.
  */
-export async function deleteManuscript(manuscriptId: Id): Promise<void> {
+export function deleteManuscript(manuscriptId: Id): Promise<void> {
+  return db.transaction("rw", [db.settings, ...manuscriptTables()], async () => {
+    const removed = new Set<Id>();
+    await removeManuscript(manuscriptId, removed);
+    await clearActivePointers(removed);
+  });
+}
+
+/** Delete a workspace and every manuscript in it. It all goes, or nothing does. */
+export function deleteWorkspace(workspaceId: Id): Promise<void> {
+  return db.transaction("rw", [db.workspaces, db.settings, ...manuscriptTables()], async () => {
+    const removed = new Set<Id>();
+    const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
+    for (const id of ids) await removeManuscript(id, removed);
+    await db.workspaces.delete(workspaceId);
+    removed.add(workspaceId);
+    await clearActivePointers(removed);
+  });
+}
+
+/**
+ * Removes the "last opened" workspace and manuscript settings when they point at
+ * something just deleted, so no setting is left naming a missing row (F16).
+ * Must run inside a transaction that covers db.settings.
+ */
+async function clearActivePointers(removed: Set<Id>): Promise<void> {
+  for (const key of ["activeWorkspaceId", "activeManuscriptId"]) {
+    const row = await db.settings.get(key);
+    if (row && removed.has(row.value as Id)) await db.settings.delete(key);
+  }
+}
+
+/** Every table that holds a manuscript or rows belonging to one. */
+function manuscriptTables() {
+  return [
+    db.manuscripts,
+    db.outlineItems,
+    db.storyEntries,
+    db.chapters,
+    db.revisions,
+    db.suggestions,
+    db.agentMessages,
+    db.coverConcepts,
+    db.roadmapCards,
+    db.researchNotes,
+    db.universeNodes,
+    db.corkNotes,
+  ];
+}
+
+/**
+ * The body of deleteManuscript. It must run inside a transaction over manuscriptTables(),
+ * so a series, its books and their translations are removed together or not at all.
+ */
+async function removeManuscript(manuscriptId: Id, removed: Set<Id>): Promise<void> {
   const children = await db.manuscripts.where("seriesId").equals(manuscriptId).primaryKeys();
   const translations = await db.manuscripts.where("translationOf").equals(manuscriptId).primaryKeys();
-  for (const childId of [...children, ...translations]) {
-    await deleteManuscript(childId);
-  }
-  return db.transaction(
-    "rw",
-    [
-      db.manuscripts,
-      db.outlineItems,
-      db.storyEntries,
-      db.chapters,
-      db.revisions,
-      db.suggestions,
-      db.agentMessages,
-      db.coverConcepts,
-      db.roadmapCards,
-      db.researchNotes,
-      db.universeNodes,
-    ],
-    async () => {
-      await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
-      await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
-      await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
-      await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
-      await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
-      await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
-      await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
-      await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
-      await db.manuscripts.delete(manuscriptId);
-    },
-  );
+  for (const childId of [...children, ...translations]) await removeManuscript(childId, removed);
+  // A book already removed through another path (a series book that is also a translation) is skipped.
+  if (!(await db.manuscripts.get(manuscriptId))) return;
+  await db.outlineItems.where("manuscriptId").equals(manuscriptId).delete();
+  await db.storyEntries.where("manuscriptId").equals(manuscriptId).delete();
+  await db.universeNodes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.corkNotes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.chapters.where("manuscriptId").equals(manuscriptId).delete();
+  await db.revisions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.suggestions.where("manuscriptId").equals(manuscriptId).delete();
+  await db.agentMessages.where("manuscriptId").equals(manuscriptId).delete();
+  await db.coverConcepts.where("manuscriptId").equals(manuscriptId).delete();
+  await db.roadmapCards.where("manuscriptId").equals(manuscriptId).delete();
+  await db.researchNotes.where("manuscriptId").equals(manuscriptId).delete();
+  await db.manuscripts.delete(manuscriptId);
+  removed.add(manuscriptId);
 }
 
-/** Delete a workspace and every manuscript in it. */
-export async function deleteWorkspace(workspaceId: Id): Promise<void> {
-  const ids = await db.manuscripts.where("workspaceId").equals(workspaceId).primaryKeys();
-  for (const id of ids) {
-    await deleteManuscript(id);
-  }
-  await db.workspaces.delete(workspaceId);
-}
-
-/** Delete a chapter with its revisions and suggestions, and unlink it from the outline. */
+/**
+ * Delete a chapter with its revisions and suggestions, and unlink it from the outline.
+ * Translations of it are kept, unlinked and flagged `sourceDeleted`, so translated work
+ * is never lost by deleting the original (F15).
+ */
 export function deleteChapter(chapterId: Id): Promise<void> {
   return db.transaction("rw", [db.chapters, db.revisions, db.suggestions, db.outlineItems], async () => {
     await db.revisions.where("chapterId").equals(chapterId).delete();
@@ -584,6 +670,13 @@ export function deleteChapter(chapterId: Id): Promise<void> {
     await db.outlineItems.where("chapterId").equals(chapterId).modify((item) => {
       delete item.chapterId;
     });
+    // sourceChapterId is not indexed, so translated chapters are found by a scan.
+    await db.chapters
+      .filter((c) => c.sourceChapterId === chapterId)
+      .modify((c) => {
+        delete c.sourceChapterId;
+        c.sourceDeleted = true;
+      });
     await db.chapters.delete(chapterId);
   });
 }

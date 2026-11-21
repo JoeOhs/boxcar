@@ -7,6 +7,8 @@ import { DEFAULT_IMAGE_MODEL, IMAGE_MODEL_SUGGESTIONS, IMAGE_PROVIDER_LABEL } fr
 import { useOnline } from "@/lib/hooks";
 import { addApiKey, deleteApiKey, revokeApiKey, setApiKeyModel, selectApiKey, useApiKeys } from "@/lib/keyVault";
 import { BackupControls } from "@/components/BackupControls";
+import { StorageUsage } from "@/components/StorageUsage";
+import { EditingTeamModels } from "@/components/EditingTeamModels";
 import { ModelSelect } from "@/components/ModelSelect";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -39,14 +41,11 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, modelO
   const providerIds = Object.keys(providers);
   const [provider, setProvider] = useState(providerIds[0]);
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(defaultModels[providerIds[0]]);
   const [serverUrl, setServerUrl] = useState(OLLAMA_DEFAULT_URL);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Each provider's dropdown is prefilled with that provider's own models, starting with its default.
   function changeProvider(next: string) {
-    setModel(defaultModels[next]);
     setProvider(next);
     setMessage(null);
   }
@@ -60,7 +59,8 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, modelO
     setBusy(true);
     setMessage(null);
     try {
-      const chosenModel = model.trim() || defaultModels[provider];
+      // A new key starts on the provider's default model; it is changed on the stored key below.
+      const chosenModel = defaultModels[provider];
       await addApiKey(kind, { provider, model: chosenModel, apiKey: plain, baseUrl });
       // The plain key leaves the form as soon as it has been encrypted and stored.
       setApiKey("");
@@ -105,21 +105,15 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, modelO
       </div>
       <p className="text-sm text-muted-foreground">{intro}</p>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label htmlFor={`${kind}-provider`}>Provider</Label>
-          <Select id={`${kind}-provider`} value={provider} onChange={(e) => changeProvider(e.target.value)}>
-            {providerIds.map((p) => (
-              <option key={p} value={p}>
-                {providers[p]}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${kind}-model`}>{modelLabel}</Label>
-          <ModelSelect id={`${kind}-model`} options={modelOptions[provider] ?? []} value={model} onChange={setModel} />
-        </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${kind}-provider`}>Provider</Label>
+        <Select id={`${kind}-provider`} value={provider} onChange={(e) => changeProvider(e.target.value)}>
+          {providerIds.map((p) => (
+            <option key={p} value={p}>
+              {providers[p]}
+            </option>
+          ))}
+        </Select>
       </div>
       {needsKey ? (
         <div className="space-y-1">
@@ -140,7 +134,7 @@ function KeyManager({ kind, title, icon, intro, providers, defaultModels, modelO
           <Input id={`${kind}-server`} value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} hint={OLLAMA_DEFAULT_URL} />
           <p className="text-xs text-muted-foreground">
             Ollama runs on your own computer, so it needs no key and no connection. Install a model first (for example, run
-            "ollama pull {model.trim() || DEFAULT_MODEL.ollama}"), and start Ollama with OLLAMA_ORIGINS set to this app's
+            "ollama pull {DEFAULT_MODEL.ollama}"), and start Ollama with OLLAMA_ORIGINS set to this app's
             address so it accepts requests from here.
           </p>
         </div>
@@ -251,14 +245,15 @@ export function Settings() {
           kind="text"
           title="AI staff"
           icon={<KeyRound className="size-4 text-muted-foreground" />}
-          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, Ollama on this computer, or Ollama Cloud. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it."
+          intro="The outliner, editor, proofreader, formatter and ghostwriter run on your own account with an AI provider: OpenAI, Anthropic, Hugging Face, Ollama on this computer, or Ollama Cloud. Your key is encrypted before it is stored on this computer, is never shown again after you save it, and is sent only to the provider you choose. Writing, outlining and exporting never need it. Once a key is saved, pick its default model below (used by the outliner, ghostwriter, formatter and translator); each editor's model is chosen under Editing team."
           providers={PROVIDER_LABEL}
           defaultModels={DEFAULT_MODEL}
           modelOptions={MODEL_SUGGESTIONS}
           keyHints={KEY_HINT}
-          modelLabel="Model"
+          modelLabel="Default model"
           canTest
         />
+        <EditingTeamModels />
         <KeyManager
           kind="image"
           title="Book Cover image AI"
@@ -280,6 +275,7 @@ export function Settings() {
           </p>
           <BackupControls />
         </Card>
+        <StorageUsage />
       </div>
     </div>
   );

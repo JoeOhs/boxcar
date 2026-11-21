@@ -11,7 +11,7 @@ Vite + React + Tailwind CSS (v4) + shadcn/ui-style components (copied into `src/
 | Screen file | Must-have | What the author can do | Tables used |
 | --- | --- | --- | --- |
 | `src/screens/Outline.tsx` | MH-1 outline | Build an act / chapter / scene / beat tree: add, add inside, reorder, indent, outdent, delete; edit title, summary and notes; start from a three-act template; create chapters from the outline or open a node's written chapter; talk to the AI Outliner | `outlineItems`, `chapters`, `agentMessages` |
-| `src/screens/Write.tsx` | MH-2 write | Add, order, delete front matter, chapters and back matter; write in a rich-text editor (bold, italic, headings, quotes, lists, scene breaks) that autosaves; set chapter status; live word counts against the target | `chapters` |
+| `src/screens/Write.tsx` | MH-2 write | Add, order, delete front matter, chapters and back matter; write in a rich-text editor (bold, italic, headings, quotes, lists, scene breaks) that autosaves 600 ms after typing stops (if the window closes or reloads inside that delay, a safety copy kept in localStorage is restored at the next start: `src/lib/draftRecovery.ts`); set chapter status; live word counts against the target | `chapters` |
 | `src/screens/Edit.tsx` | MH-3 edit | Read a chapter and add suggested changes from selected text; accept (applies the change) or reject; ask the AI Editor or Proofreader to review the chapter or chat about it; snapshot, compare and restore revisions | `suggestions`, `revisions`, `chapters`, `agentMessages` |
 | `src/screens/Format.tsx` | MH-4 format | Set font, size, line spacing, paragraph style, chapter headings, scene break, drop caps, table of contents and trim size; see a live preview built by the same code as the export; ask the AI Formatter | `manuscripts` (embedded `format`), `chapters`, `agentMessages` |
 | `src/screens/Export.tsx` | MH-5 and export | Fill in the KDP book details and cover, see a readiness checklist, and export an EPUB 3 file for Amazon KDP | `manuscripts`, `chapters` |
@@ -19,12 +19,12 @@ Vite + React + Tailwind CSS (v4) + shadcn/ui-style components (copied into `src/
 Supporting screens (not must-haves on their own):
 - `src/screens/WorkspaceGate.tsx`: the first screen. Choose an author/pen name workspace or create one; nothing else is shown until then. `src/components/WorkspaceSwitcher.tsx` is the "Workspaces" button at the bottom of the left menu (switch or add a workspace).
 - `src/screens/Manuscripts.tsx`: rename and delete the open workspace; create, open and delete manuscripts in it; set stage and target word count.
-- `src/screens/Settings.tsx`: the author's own AI provider (OpenAI or Anthropic), key and model, stored encrypted by `addApiKey` (`src/lib/keyVault.ts`), listed with revoke and delete, and tested on request.
+- `src/screens/Settings.tsx`: the author’s own AI provider (OpenAI, Anthropic, Hugging Face, Ollama on this computer or Ollama Cloud) and key, with the stored key’s default model, stored encrypted by `addApiKey` (`src/lib/keyVault.ts`), listed with revoke and delete, and tested on request. “Editing team” (`EditingTeamModels`) gives the developmental editor, line editor, copy editor and proofreader a model each. Below the keys: “Your data” (backup and restore) and “Storage” (`StorageUsage`), which shows what each book’s history takes up and clears it only when the author asks.
 
 ## Supporting code
 - `src/lib/store.ts`: write operations (create/patch workspaces, manuscripts, outline items, chapters, snapshots).
 - `src/lib/epub.ts`: `buildEpub` (EPUB 3 + NCX, cover, TOC, KDP metadata via JSZip), `buildCss` and `buildPreviewDocument` (shared by preview and export).
-- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestStageReview`, `requestFormatPreset`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`.
+- `src/lib/ai.ts`: calls the chosen provider straight from the app with the author's key (`askAi`, `requestStageReview`, `requestFormatPreset`) and the role prompts. `src/components/AgentChat.tsx` is the per-role conversation saved in `agentMessages`. Every AI reply bubble has three buttons: Copy (to the clipboard), Reply (quotes the start of that reply above the message box and sends it in front of the author’s answer) and Send to Universe (the orbit icon), which pins the reply to the Cork board with `createCorkNote` (`src/lib/corkboard.ts`).
 - `src/lib/text.ts`, `chapters.ts`, `outline.ts`, `hooks.ts`, `download.ts`: helpers.
 - `public/sw.js` and `public/manifest.webmanifest`: let the built app open with no connection.
 

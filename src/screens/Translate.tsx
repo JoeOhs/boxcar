@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Languages, PenLine, Plus, SpellCheck, Sparkles, Undo2 } from "lucide-react";
 import { db, type Chapter, type Id, type Manuscript, type TranslationState } from "@/db/schema";
 import { useAiSettings, aiReachable } from "@/lib/ai";
@@ -10,6 +10,7 @@ import {
   createTranslation,
   proofreadTranslation,
   setChapterApproved,
+  syncTranslationChapters,
   translateChapter,
   type TargetLanguage,
 } from "@/lib/translate";
@@ -216,6 +217,12 @@ function ChapterReview({
         </div>
       </div>
 
+      {chapter.sourceDeleted ? (
+        <p className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+          The original of this chapter was deleted from the book. The translation is kept so nothing is lost: keep it as it is, or delete it in
+          the translation&apos;s Write screen if you no longer need it. It can&apos;t be translated again.
+        </p>
+      ) : null}
       {!ai && !busy ? (
         <p className="text-sm text-muted-foreground">Translating and proofreading need an AI key. Add one in Settings.</p>
       ) : null}
@@ -304,7 +311,7 @@ function TranslationWork({ source, translation }: { source: Manuscript; translat
                 {original?.title || c.title || (c.kind === "chapter" ? "Untitled chapter" : c.kind === "front" ? "Front matter" : "Back matter")}
               </span>
               <span className={cn("shrink-0 text-[11px]", state === "approved" ? "text-success" : "text-muted-foreground")}>
-                {state === "approved" ? <Check className="size-3.5" /> : STATE_LABEL[state]}
+                {c.sourceDeleted ? "Original deleted" : state === "approved" ? <Check className="size-3.5" /> : STATE_LABEL[state]}
               </span>
             </button>
           );
@@ -326,6 +333,14 @@ function TranslateBody({ source }: { source: Manuscript }) {
   const [chosenId, setChosenId] = useState<Id | null>(null);
   const [creating, setCreating] = useState(false);
   const { selectManuscript } = useApp();
+  const list = translations ?? [];
+  const active = list.find((t) => t.id === chosenId) ?? list[0];
+  const activeId = active?.id;
+
+  // Chapters added to the original since the translation was made are laid out in it too.
+  useEffect(() => {
+    if (activeId) void syncTranslationChapters(activeId);
+  }, [activeId]);
 
   if (source.translationOf) {
     return (
@@ -343,8 +358,6 @@ function TranslateBody({ source }: { source: Manuscript }) {
     );
   }
 
-  const list = translations ?? [];
-  const active = list.find((t) => t.id === chosenId) ?? list[0];
   const showForm = creating || (translations !== undefined && list.length === 0);
 
   return (

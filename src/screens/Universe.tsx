@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
+import { CorkBoard } from "@/components/CorkBoard";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Outline } from "@/screens/Outline";
@@ -337,12 +338,12 @@ function NodeEditor({ node, nodes, manuscript }: { node: UniverseNode; nodes: Un
   );
 }
 
-function UniverseBody({ manuscript }: { manuscript: Manuscript }) {
+function UniverseBody({ manuscript, initialSelectedId = null }: { manuscript: Manuscript; initialSelectedId?: string | null }) {
   const nodes = useUniverseNodes(manuscript.id);
   const outlineItems = useOutlineItems(manuscript.id);
   const ai = useAiSettings();
   const online = useOnline();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [newKind, setNewKind] = useState<UniverseNodeKind>("character");
   const [showOutliner, setShowOutliner] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -512,12 +513,15 @@ function UniverseBody({ manuscript }: { manuscript: Manuscript }) {
 }
 
 /**
- * The Universe screen. Its first tab is the wiki-style second brain; the second
- * keeps the outline workshop, which the Outliner can fill from the Universe.
+ * The Universe screen. Its first tab is the wiki-style second brain; the second is the
+ * Cork board, where AI replies sent with "Send to Universe" are pinned; the third keeps
+ * the outline workshop, which the Outliner can fill from the Universe.
  */
 export function Universe() {
   const { manuscript } = useApp();
-  const [tab, setTab] = useState<"universe" | "outline">("universe");
+  const [tab, setTab] = useState<"universe" | "cork" | "outline">("universe");
+  /** A node just made from a cork note, opened when the Universe tab shows. */
+  const [openNodeId, setOpenNodeId] = useState<string | null>(null);
   if (!manuscript) return <NoManuscript />;
   return (
     <div className="flex h-full flex-col">
@@ -525,12 +529,28 @@ export function Universe() {
         <Button size="sm" variant={tab === "universe" ? "secondary" : "ghost"} aria-pressed={tab === "universe"} onClick={() => setTab("universe")}>
           Universe
         </Button>
+        <Button size="sm" variant={tab === "cork" ? "secondary" : "ghost"} aria-pressed={tab === "cork"} onClick={() => setTab("cork")}>
+          Cork board
+        </Button>
         <Button size="sm" variant={tab === "outline" ? "secondary" : "ghost"} aria-pressed={tab === "outline"} onClick={() => setTab("outline")}>
           Outline
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "universe" ? <UniverseBody key={manuscript.id} manuscript={manuscript} /> : <Outline />}
+        {tab === "universe" ? (
+          <UniverseBody key={manuscript.id + (openNodeId ?? "")} manuscript={manuscript} initialSelectedId={openNodeId} />
+        ) : tab === "cork" ? (
+          <CorkBoard
+            key={manuscript.id}
+            manuscriptId={manuscript.id}
+            onOpenNode={(nodeId) => {
+              setOpenNodeId(nodeId);
+              setTab("universe");
+            }}
+          />
+        ) : (
+          <Outline />
+        )}
       </div>
     </div>
   );

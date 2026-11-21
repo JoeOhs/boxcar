@@ -4,6 +4,7 @@ import { sortChapters } from "./chapters";
 import { seedRoadmap } from "./roadmap";
 import { countWords, htmlToText } from "./text";
 import { bookTypeOf } from "./bookTypes";
+import { sanitizeDocument } from "./sanitize";
 
 /**
  * Translation of a whole book into another language, one chapter at a time.
@@ -77,6 +78,50 @@ export async function createTranslation(source: Manuscript, target: TargetLangua
   return translation;
 }
 
+/**
+ * Brings a translation's chapter list in line with its original: a chapter added to the
+ * original since gets an empty chapter waiting to be translated, and every chapter takes
+ * the original's section and place. Chapters already translated keep their text.
+ * Returns how many chapters were added.
+ */
+export function syncTranslationChapters(translationId: Id): Promise<number> {
+  return db.transaction("rw", db.manuscripts, db.chapters, async () => {
+    const translation = await db.manuscripts.get(translationId);
+    if (!translation?.translationOf) return 0;
+    const [sources, existing] = await Promise.all([
+      db.chapters.where("manuscriptId").equals(translation.translationOf).toArray(),
+      db.chapters.where("manuscriptId").equals(translationId).toArray(),
+    ]);
+    const bySource = new Map(existing.filter((c) => c.sourceChapterId).map((c) => [c.sourceChapterId!, c]));
+    const now = Date.now();
+    let added = 0;
+    for (const source of sources) {
+      if (source.kind === "scrap") continue;
+      const mine = bySource.get(source.id);
+      if (!mine) {
+        await db.chapters.add({
+          id: newId(),
+          manuscriptId: translationId,
+          kind: source.kind,
+          title: "",
+          content: "",
+          wordCount: 0,
+          status: "draft",
+          order: source.order,
+          sourceChapterId: source.id,
+          translationState: "pending",
+          createdAt: now,
+          updatedAt: now,
+        });
+        added++;
+      } else if (mine.kind !== source.kind || mine.order !== source.order) {
+        await db.chapters.update(mine.id, { kind: source.kind, order: source.order });
+      }
+    }
+    return added;
+  });
+}
+
 /** Inline elements sit inside a paragraph; any other element is a block. */
 const INLINE_TAGS = new Set([
   "A", "ABBR", "B", "BDI", "BDO", "BR", "CITE", "CODE", "DEL", "DFN", "EM", "I", "IMG", "INS",
@@ -125,6 +170,46 @@ function textBlocks(doc: Document): Element[] {
   );
 }
 
+/** One request-sized piece of a block's HTML, and what joined it to the next piece in the original. */
+interface Piece {
+  item: number;
+  html: string;
+  /** " " when the original had a space after this piece, "" when the cut was mid-word. */
+  joiner: string;
+}
+
+/** True when position `i` of `html` is inside a tag such as <em class="x">. */
+function insideTag(html: string, i: number): boolean {
+  return html.lastIndexOf("<", i) > html.lastIndexOf(">", i);
+}
+
+/**
+ * Splits one block's HTML into pieces under `limit` characters (F20): at a sentence end
+ * where it can, else at a space, never inside a tag. A tag that opens in one piece and
+ * closes in another is fine: the pieces are joined again before the HTML is read.
+ */
+export function splitLongBlock(html: string, limit: number): { html: string; joiner: string }[] {
+  const pieces: { html: string; joiner: string }[] = [];
+  let rest = html;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    let cut = -1;
+    for (let i = window.length - 2; i > 0 && cut === -1; i--) {
+      if (".!?".includes(window[i]) && window[i + 1] === " " && !insideTag(window, i)) cut = i + 1;
+    }
+    for (let i = window.length - 1; i > 0 && cut === -1; i--) {
+      if (window[i] === " " && !insideTag(window, i)) cut = i;
+    }
+    if (cut === -1) cut = insideTag(window, limit - 1) ? window.lastIndexOf("<") : limit;
+    if (cut <= 0) cut = limit;
+    const spaced = rest[cut] === " ";
+    pieces.push({ html: rest.slice(0, cut), joiner: spaced ? " " : "" });
+    rest = spaced ? rest.slice(cut + 1) : rest.slice(cut);
+  }
+  pieces.push({ html: rest, joiner: "" });
+  return pieces;
+}
+
 /** Splits the strings into batches that each stay under the size limit. */
 function batchesOf(items: string[]): string[][] {
   const batches: string[][] = [];
@@ -162,17 +247,6 @@ async function translateBatch(settings: AiSettings, batch: string[], target: Tar
   return parsed as string[];
 }
 
-/** Removes anything that could run or restyle the page from text the AI sent back. */
-function sanitize(doc: Document): void {
-  doc.body.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach((node) => node.remove());
-  doc.body.querySelectorAll("*").forEach((el) => {
-    el.removeAttribute("style");
-    for (const name of el.getAttributeNames()) {
-      if (name.startsWith("on")) el.removeAttribute(name);
-    }
-  });
-}
-
 /**
  * Translates one chapter of a translation into the target language and stores it
  * on the translation's chapter. The chapter's title and every paragraph are
@@ -193,11 +267,19 @@ export async function translateChapter(
   for (const block of blocks) items.push(block.innerHTML);
   if (items.length === 0) throw new Error("This chapter has no text to translate yet.");
 
-  const translated: string[] = [];
-  for (const batch of batchesOf(items)) {
+  // A block longer than one request is split into pieces, translated, and joined again.
+  const pieces: Piece[] = items.flatMap((html, item) =>
+    splitLongBlock(html, BATCH_CHARACTERS).map((piece) => ({ item, ...piece })),
+  );
+  const translatedPieces: string[] = [];
+  for (const batch of batchesOf(pieces.map((p) => p.html))) {
     // Batches run one after another, so the chapter is never sent as one long request.
-    translated.push(...(await translateBatch(settings, batch, target)));
+    translatedPieces.push(...(await translateBatch(settings, batch, target)));
   }
+  const translated: string[] = items.map(() => "");
+  pieces.forEach((piece, i) => {
+    translated[piece.item] += translatedPieces[i].trim() + piece.joiner;
+  });
 
   let cursor = 0;
   let title = "";
@@ -209,7 +291,7 @@ export async function translateChapter(
   blocks.forEach((block, i) => {
     block.innerHTML = translated[cursor + i];
   });
-  sanitize(parsed);
+  sanitizeDocument(parsed);
   const content = parsed.body.innerHTML;
   await db.chapters.update(translation.id, {
     title,

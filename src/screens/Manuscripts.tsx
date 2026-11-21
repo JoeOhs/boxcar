@@ -13,9 +13,10 @@ import {
 } from "@/db/schema";
 import { BOOK_TYPE_ORDER, BOOK_TYPES, bookTypeOf } from "@/lib/bookTypes";
 import { mockupLook } from "@/lib/coverMockup";
-import { IMPORT_ACCEPT } from "@/lib/documents";
+import { IMPORT_ACCEPT } from "@/lib/importFormats";
 import { genreById, type Genre } from "@/lib/genres";
-import { importManuscript, planImport, type ImportPlan } from "@/lib/importManuscript";
+// The import code (file readers and the zip library) loads only when a file is chosen (F23).
+import type { ImportPlan } from "@/lib/importManuscript";
 import { addSeriesBookTo, createManuscript, createSeries, goalWordCount, patchManuscript, patchWorkspace } from "@/lib/store";
 import { countWords } from "@/lib/text";
 import { cn } from "@/lib/utils";
@@ -292,6 +293,7 @@ function ImportManuscriptForm({
     setError(null);
     setPlan(null);
     try {
+      const { planImport } = await import("@/lib/importManuscript");
       const found = await planImport(file);
       setPlan(found);
       setTitle(found.title);
@@ -307,6 +309,7 @@ function ImportManuscriptForm({
     if (!plan || !title.trim() || busy) return;
     setBusy(true);
     try {
+      const { importManuscript } = await import("@/lib/importManuscript");
       const created = await importManuscript(workspace, plan, title.trim(), genre, goal ?? undefined);
       selectManuscript(created.id);
       onImported?.(created.id);

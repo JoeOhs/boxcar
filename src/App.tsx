@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,18 +18,49 @@ import { cn } from "@/lib/utils";
 import { useApp, type Screen } from "@/state/AppState";
 import { Brand, ThemeToggle } from "@/components/Brand";
 import { Manuscripts } from "@/screens/Manuscripts";
-import { Roadmap } from "@/screens/Roadmap";
 import { WorkspaceGate } from "@/screens/WorkspaceGate";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
-import { Universe } from "@/screens/Universe";
-import { Write } from "@/screens/Write";
-import { Edit } from "@/screens/Edit";
-import { BookCover } from "@/screens/BookCover";
-import { Format } from "@/screens/Format";
-import { Export } from "@/screens/Export";
-import { Translate } from "@/screens/Translate";
-import { Settings } from "@/screens/Settings";
 import { Button } from "@/components/ui/button";
+
+/**
+ * The book screens load the first time they are opened, so the app starts faster (F23).
+ * The workspace gate and the Bookshelf, the first two screens anyone sees, stay in the
+ * main bundle.
+ */
+const SCREEN_LOADERS = {
+  roadmap: () => import("@/screens/Roadmap").then((m) => ({ default: m.Roadmap })),
+  universe: () => import("@/screens/Universe").then((m) => ({ default: m.Universe })),
+  write: () => import("@/screens/Write").then((m) => ({ default: m.Write })),
+  edit: () => import("@/screens/Edit").then((m) => ({ default: m.Edit })),
+  format: () => import("@/screens/Format").then((m) => ({ default: m.Format })),
+  cover: () => import("@/screens/BookCover").then((m) => ({ default: m.BookCover })),
+  export: () => import("@/screens/Export").then((m) => ({ default: m.Export })),
+  translate: () => import("@/screens/Translate").then((m) => ({ default: m.Translate })),
+  settings: () => import("@/screens/Settings").then((m) => ({ default: m.Settings })),
+} satisfies Partial<Record<Screen, () => Promise<{ default: ComponentType }>>>;
+
+const LAZY_SCREENS: Record<keyof typeof SCREEN_LOADERS, ComponentType> = {
+  roadmap: lazy(SCREEN_LOADERS.roadmap),
+  universe: lazy(SCREEN_LOADERS.universe),
+  write: lazy(SCREEN_LOADERS.write),
+  edit: lazy(SCREEN_LOADERS.edit),
+  format: lazy(SCREEN_LOADERS.format),
+  cover: lazy(SCREEN_LOADERS.cover),
+  export: lazy(SCREEN_LOADERS.export),
+  translate: lazy(SCREEN_LOADERS.translate),
+  settings: lazy(SCREEN_LOADERS.settings),
+};
+
+/**
+ * Downloads every screen in the background once the app is open. The service worker
+ * caches what is downloaded, so this is what keeps screens never opened yet available
+ * offline.
+ */
+function preloadScreens() {
+  const run = () => Object.values(SCREEN_LOADERS).forEach((load) => void load().catch(() => {}));
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 5000 });
+  else setTimeout(run, 2000);
+}
 
 /** Remembers whether the left menu was left collapsed to icons. */
 const SIDEBAR_KEY = "boxcar.sidebarCollapsed";
@@ -50,28 +81,13 @@ const NAV: { screen: Screen; label: string; icon: ReactNode }[] = [
 const OPEN_WITHOUT_BOOK: Screen[] = ["manuscripts", "settings"];
 
 function CurrentScreen({ screen }: { screen: Screen }) {
-  switch (screen) {
-    case "manuscripts":
-      return <Manuscripts />;
-    case "roadmap":
-      return <Roadmap />;
-    case "universe":
-      return <Universe />;
-    case "write":
-      return <Write />;
-    case "edit":
-      return <Edit />;
-    case "format":
-      return <Format />;
-    case "cover":
-      return <BookCover />;
-    case "export":
-      return <Export />;
-    case "translate":
-      return <Translate />;
-    case "settings":
-      return <Settings />;
-  }
+  if (screen === "manuscripts") return <Manuscripts />;
+  const Lazy = LAZY_SCREENS[screen];
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Opening...</div>}>
+      <Lazy />
+    </Suspense>
+  );
 }
 
 function NavButton({ screen, label, icon, collapsed }: { screen: Screen; label: string; icon: ReactNode; collapsed: boolean }) {
@@ -105,6 +121,10 @@ function NavButton({ screen, label, icon, collapsed }: { screen: Screen; label: 
 export default function App() {
   const { loading, entered, online, screen, workspace } = useApp();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === "yes");
+
+  useEffect(() => {
+    if (entered) preloadScreens();
+  }, [entered]);
 
   function toggleSidebar() {
     const next = !collapsed;

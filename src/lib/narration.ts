@@ -3,6 +3,7 @@ import type { Chapter, HeadingStyle, Manuscript } from "@/db/schema";
 import { chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { fileSafeName } from "./download";
 import { NARRATION_MODEL } from "./providers";
+import { fetchWithTimeout, RequestTimeoutError } from "./request";
 import { htmlToText, textToParagraphs } from "./text";
 
 /**
@@ -87,12 +88,13 @@ export async function synthesizeSpeech(apiKey: string, input: string, voice: str
   }
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/audio/speech", {
+    response = await fetchWithTimeout("The AI voice service", "https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: NARRATION_MODEL, input, voice, response_format: "mp3" }),
     });
-  } catch {
+  } catch (e) {
+    if (e instanceof RequestTimeoutError) throw e;
     throw new Error("Could not reach the AI voice service. Check your connection and try again.");
   }
   if (!response.ok) {

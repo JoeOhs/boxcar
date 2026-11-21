@@ -38,7 +38,7 @@ ${f.dropCaps ? ".chapter > h1 + p::first-letter { float: left; font-size: 3.2em;
 .titlepage h1 { page-break-before: avoid; margin: 0 0 0.3em 0; }
 .titlepage .subtitle { text-indent: 0; text-align: center; font-style: italic; margin: 0 0 2em 0; }
 .titlepage .author { text-indent: 0; text-align: center; font-size: 1.2em; letter-spacing: 0.1em; }
-.copyright p { text-indent: 0; text-align: left; font-size: 0.85em; margin: 0 0 0.8em 0; }
+.copyright p { text-indent: 0; text-align: start; font-size: 0.85em; margin: 0 0 0.8em 0; }
 .cover { text-align: center; }
 .cover img { max-width: 100%; max-height: 100%; }
 nav ol { list-style: none; margin: 0; padding: 0; }
@@ -100,10 +100,23 @@ function chapterSection(chapter: Chapter, number: number | undefined, f: FormatS
   return `<section class="chapter" epub:type="${epubType}">${chapterHeadingHtml(chapter, number, f)}${toXhtmlBody(chapter.content, f.sceneBreak)}</section>`;
 }
 
+/** Languages written right to left, by their primary subtag (F21). */
+const RTL_LANGUAGES = new Set(["ar", "arc", "ckb", "dv", "fa", "he", "iw", "ks", "ku", "ps", "sd", "syr", "ug", "ur", "yi"]);
+
+/** True when a book in this language (a code such as "ar" or "he-IL") is read right to left. */
+export function isRtlLanguage(code: string | undefined): boolean {
+  return RTL_LANGUAGES.has((code ?? "").trim().toLowerCase().split(/[-_]/)[0]);
+}
+
+/** The dir attribute for a right-to-left language, or nothing. */
+function dirAttribute(language: string): string {
+  return isRtlLanguage(language) ? ' dir="rtl"' : "";
+}
+
 function xhtmlDocument(title: string, language: string, body: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${escapeHtml(language)}" xml:lang="${escapeHtml(language)}">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${escapeHtml(language)}" xml:lang="${escapeHtml(language)}"${dirAttribute(language)}>
 <head>
 <meta charset="utf-8"/>
 <title>${escapeHtml(title)}</title>
@@ -283,7 +296,7 @@ ${hasCover ? `<meta name="cover" content="cover-image"/>` : ""}
 <manifest>
 ${manifest.join("\n")}
 </manifest>
-<spine toc="ncx">
+<spine toc="ncx"${isRtlLanguage(language) ? ' page-progression-direction="rtl"' : ""}>
 ${spine.join("\n")}
 </spine>
 </package>`,
@@ -318,7 +331,7 @@ export function buildPreviewDocument(
 
   // The preview page only differs from the epub by the paper around it.
   return `<!doctype html>
-<html lang="${escapeHtml(manuscript.language || "en")}">
+<html lang="${escapeHtml(manuscript.language || "en")}"${dirAttribute(manuscript.language || "en")}>
 <head>
 <meta charset="utf-8"/>
 <style>${buildCss(f)}</style>

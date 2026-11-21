@@ -1,4 +1,4 @@
-import { db } from "@/db/schema";
+import { db, storyEntryToNode } from "@/db/schema";
 
 /**
  * Save a backup of everything to one file, and open it again.
@@ -14,8 +14,13 @@ const BACKUP_VERSION = 1;
 
 /** Tables that stay on this computer and are never written to, or replaced by, a backup. */
 const LOCAL_ONLY_TABLES = new Set(["apiKeys"]);
-/** Settings that belong to this computer's key vault. */
-const LOCAL_ONLY_SETTINGS = (key: string) => key === "keyVaultKey" || key.startsWith("activeKey:");
+/**
+ * Settings that belong to this computer's key vault. "ai" and "imageAi" are where
+ * older versions kept keys as plain text (see migrateLegacyKeys); if one was never
+ * migrated it must still stay out of the file.
+ */
+const LOCAL_ONLY_SETTINGS = (key: string) =>
+  key === "keyVaultKey" || key.startsWith("activeKey:") || key === "ai" || key === "imageAi";
 
 interface EncodedBlob {
   __blob: string;
@@ -129,7 +134,8 @@ export async function readBackup(file: File): Promise<BackupFile> {
 /** What a backup holds, in counts, for the author to check before it replaces their data. */
 export function summarizeBackup(backup: BackupFile): BackupSummary {
   const count = (name: string) => backup.tables[name]?.length ?? 0;
-  const known = new Set(["workspaces", "manuscripts", "chapters"]);
+  // Settings are left out here as in summarizeCurrent, so the two counts compare like with like (F17).
+  const known = new Set(["workspaces", "manuscripts", "chapters", "settings"]);
   const otherRows = Object.entries(backup.tables)
     .filter(([name]) => !known.has(name) && !LOCAL_ONLY_TABLES.has(name))
     .reduce((sum, [, rows]) => sum + rows.length, 0);
@@ -171,6 +177,13 @@ export async function restoreBackup(backup: BackupFile): Promise<void> {
       const rows = (backup.tables[table.name] ?? []).map(decodeRow);
       const usable = table.name === "settings" ? rows.filter((row) => !LOCAL_ONLY_SETTINGS(String(row.key))) : rows;
       if (usable.length > 0) await table.bulkPut(usable);
+    }
+    // A backup made before the Universe (database version 7) has story entries and no
+    // Universe table; give them the same move the database upgrade gave everyone else.
+    // Newer backups are left alone, so a node the author deleted is not brought back.
+    if (!("universeNodes" in backup.tables)) {
+      const entries = await db.storyEntries.toArray();
+      if (entries.length > 0) await db.universeNodes.bulkPut(entries.map(storyEntryToNode));
     }
   });
 }

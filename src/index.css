@@ -21,6 +21,14 @@
   --ring: #8a93a3;
   --success: #3f7a52;
   --warning: #a8741a;
+  /* Cork board (Universe screen): the cork, its specks, and the note papers. */
+  --cork: #c9a273;
+  --cork-speck: #a9814f;
+  --note-ink: #2a2622;
+  --note-yellow: #fbe9a6;
+  --note-pink: #f6cfd2;
+  --note-blue: #cfe1f2;
+  --note-green: #d4ebc9;
 }
 
 .dark {
@@ -42,6 +50,13 @@
   --ring: #6f7785;
   --success: #6bb487;
   --warning: #d9a441;
+  --cork: #5a4630;
+  --cork-speck: #473724;
+  --note-ink: #2a2622;
+  --note-yellow: #e6d48f;
+  --note-pink: #dfb5b9;
+  --note-blue: #b5c9dc;
+  --note-green: #bcd4b1;
 }
 
 @theme inline {

@@ -202,10 +202,11 @@ export async function patchManuscript(id: Id, changes: Partial<Omit<Manuscript, 
   const current = await db.manuscripts.get(id);
   if (!current) return;
   const next: Partial<Omit<Manuscript, "id">> = { ...changes };
-  if (current.type && next.type !== undefined && next.type !== current.type) delete next.type;
-  if (current.targetWordCount > 0 && next.targetWordCount !== undefined) delete next.targetWordCount;
-  if (current.genre && next.genre !== undefined && next.genre !== current.genre) delete next.genre;
-  if (next.status !== undefined && STAGE_RANK[next.status] < STAGE_RANK[current.status]) delete next.status;
+  // Dexie removes a field that is set to undefined, so an explicit undefined counts as a change too.
+  if (current.type && "type" in next && next.type !== current.type) delete next.type;
+  if (current.targetWordCount > 0 && "targetWordCount" in next) delete next.targetWordCount;
+  if (current.genre && "genre" in next && next.genre !== current.genre) delete next.genre;
+  if ("status" in next && (next.status === undefined || STAGE_RANK[next.status] < STAGE_RANK[current.status])) delete next.status;
   await db.manuscripts.update(id, { ...next, updatedAt: Date.now() });
 }
 

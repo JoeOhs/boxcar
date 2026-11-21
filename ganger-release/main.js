@@ -137,11 +137,31 @@ async function startServer() {
   app.quit();
 }
 
+// Ollama Cloud sends no CORS headers, so the page cannot call https://ollama.com itself.
+// It calls app://local/__ollama-cloud/... instead (same origin, no CORS check), and this
+// forwards the request from the main process. Only ollama.com is reachable this way.
+// See OLLAMA_CLOUD_PROXY_PATH in src/lib/providers.ts.
+const OLLAMA_CLOUD_PREFIX = "/__ollama-cloud/";
+
+async function forwardToOllamaCloud(request, url) {
+  const target = "https://ollama.com/" + url.pathname.slice(OLLAMA_CLOUD_PREFIX.length) + url.search;
+  const headers = new Headers(request.headers);
+  for (const name of ["origin", "referer", "host", "cookie"]) headers.delete(name);
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  return net.fetch(target, {
+    method: request.method,
+    headers,
+    body: hasBody ? await request.arrayBuffer() : undefined,
+  });
+}
+
 app.whenReady().then(() => {
   if (hasServer) return startServer();
-  protocol.handle("app", (request) =>
-    net.fetch(pathToFileURL(fileFor(new URL(request.url).pathname)).toString()),
-  );
+  protocol.handle("app", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith(OLLAMA_CLOUD_PREFIX)) return forwardToOllamaCloud(request, url);
+    return net.fetch(pathToFileURL(fileFor(url.pathname)).toString());
+  });
   open("app://local/");
 });
 

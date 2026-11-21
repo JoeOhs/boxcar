@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript } from "@/db/schema";
+import { getEditModels, type AgentRole, type AiProvider, type AiSettings, type EditModels, type EditStage, type EditWorkflow, type Manuscript, type ModelSlot } from "@/db/schema";
 import { DEFAULT_MODEL, DEFAULT_STAGE_MODEL } from "./providers";
+import { syncEditCards } from "./roadmap";
 import { patchManuscript } from "./store";
 
 /** One pass of the editing workflow. */
@@ -61,7 +62,7 @@ export const EDIT_STAGES: StageInfo[] = [
       "The final check that catches typos, formatting errors and layout issues before publication.",
     role: "proofreader",
     persona:
-      "You are the Proofreader at a small publishing house. This is the last check before publication. You find typos, doubled words, stray characters, inconsistent scene breaks, spacing and formatting errors, and anything that would look wrong on the page. You change as little as possible.",
+      "You are the Proofreader at a small publishing house. You perform the final quality check before publication, focusing exclusively on surface-level errors such as spelling, grammar, punctuation, and formatting consistency. Your role is to verify that the designed layout is correct, check for typographical mistakes, and ensure the document follows the conventions the copy editor applied, without altering the content’s meaning or structure.",
     task: "Proofread the chapter below. Find typos, repeated words, wrong or missing punctuation marks, stray symbols, spacing problems and formatting or layout slips.",
     output: "changes",
   },
@@ -75,11 +76,11 @@ export function stageInfo(stage: EditStage): StageInfo {
  * The model for one pass: the author's choice, else the default for that pass, else the
  * model on the author's key (providers such as Ollama have no defaults of their own).
  */
-export function modelForStage(provider: AiProvider, models: EditModels, stage: EditStage, keyModel = ""): string {
+export function modelForStage(provider: AiProvider, models: EditModels, stage: ModelSlot, keyModel = ""): string {
   return models[provider]?.[stage]?.trim() || DEFAULT_STAGE_MODEL[provider][stage] || keyModel || DEFAULT_MODEL[provider];
 }
-/** The AI settings to use for one pass: the author's key and provider with that pass's model. */
-export function settingsForStage(settings: AiSettings, models: EditModels, stage: EditStage): AiSettings {
+/** The AI settings to use for one pass (or the Ghostwriter): the author's key and provider with its chosen model. */
+export function settingsForStage(settings: AiSettings, models: EditModels, stage: ModelSlot): AiSettings {
   return { ...settings, model: modelForStage(settings.provider, models, stage, settings.model) };
 }
 
@@ -114,7 +115,8 @@ export function workflowOf(manuscript: Manuscript): EditWorkflow {
 }
 
 function save(manuscript: Manuscript, next: EditWorkflow): Promise<void> {
-  return patchManuscript(manuscript.id, { editWorkflow: next });
+  // The Roadmap edit cards follow the passes, so they are brought in line after every change.
+  return patchManuscript(manuscript.id, { editWorkflow: next }).then(() => syncEditCards(manuscript.id));
 }
 
 /** Moves to a pass, if it is open. */
@@ -123,12 +125,16 @@ export async function selectStage(manuscript: Manuscript, stage: EditStage): Pro
   if (isStageOpen(workflow, stage)) await save(manuscript, { ...workflow, stage });
 }
 
-/** Marks a pass finished and moves on to the next one. */
-export async function completeStage(manuscript: Manuscript, stage: EditStage): Promise<void> {
+/**
+ * Marks a pass finished and moves on to the next one. With `stay`, the pass is marked
+ * finished but stays selected, so the author can work through its report first and move
+ * on when ready (the developmental pass does this: revising comes before line editing).
+ */
+export async function completeStage(manuscript: Manuscript, stage: EditStage, options: { stay?: boolean } = {}): Promise<void> {
   const workflow = workflowOf(manuscript);
   if (!isStageOpen(workflow, stage)) return;
   const completed = ORDER.filter((s) => s === stage || workflow.completed.includes(s));
-  const next = ORDER[ORDER.indexOf(stage) + 1] ?? stage;
+  const next = options.stay ? stage : (ORDER[ORDER.indexOf(stage) + 1] ?? stage);
   await save(manuscript, { ...workflow, completed, stage: next });
 }
 

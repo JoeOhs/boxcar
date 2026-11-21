@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { isSingleWord, lookupWord, type WordLookup as Lookup } from "@/lib/lookup";
 import { Button } from "@/components/ui/button";
@@ -7,34 +7,63 @@ interface Picked {
   word: string;
   x: number;
   y: number;
+  /** True while the word is scrolled out of the writing block's view. */
+  hidden: boolean;
 }
 
 /**
  * Wraps the writing area. Select one word in the text and a "Look up" button appears
  * beside it; it opens the dictionary, thesaurus and spelling for that word. A synonym or
  * suggestion clicked in the card replaces the selected word in the text.
+ * The button and the card stay pinned to the word while the writing block scrolls, and
+ * hide while the word is out of view.
  */
 export function WordLookupArea({ children, className }: { children: ReactNode; className?: string }) {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [open, setOpen] = useState(false);
+  // The selected word's place in the text, kept so the card can follow it on scroll.
+  const rangeRef = useRef<Range | null>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const hasPick = picked !== null;
+
+  /** Measures where the selected word is on screen now, and whether the writing block shows it. */
+  function place(word: string, range: Range): Picked {
+    const box = range.getBoundingClientRect();
+    const view = areaRef.current?.getBoundingClientRect();
+    const hidden = view ? box.bottom < view.top || box.top > view.bottom : false;
+    return { word, x: box.left, y: box.bottom, hidden };
+  }
+
+  function follow() {
+    const range = rangeRef.current;
+    if (range) setPicked((p) => (p ? place(p.word, range) : p));
+  }
+
+  useEffect(() => {
+    if (!hasPick) return;
+    window.addEventListener("resize", follow);
+    return () => window.removeEventListener("resize", follow);
+  }, [hasPick]);
 
   function readSelection() {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
     if (!selection || selection.rangeCount === 0 || !isSingleWord(text)) {
       // Selecting something else (or typing) closes the card; the next word needs its own "Look up".
+      rangeRef.current = null;
       setPicked(null);
       setOpen(false);
       return;
     }
-    const box = selection.getRangeAt(0).getBoundingClientRect();
-    setPicked({ word: text, x: box.left, y: box.bottom });
+    const range = selection.getRangeAt(0).cloneRange();
+    rangeRef.current = range;
+    setPicked(place(text, range));
   }
 
   return (
-    <div className={className} onMouseUp={readSelection} onKeyUp={readSelection}>
+    <div ref={areaRef} className={className} onMouseUp={readSelection} onKeyUp={readSelection} onScroll={follow}>
       {children}
-      {picked && !open ? (
+      {picked && !open && !picked.hidden ? (
         <Button
           size="sm"
           variant="secondary"
@@ -52,7 +81,9 @@ export function WordLookupArea({ children, className }: { children: ReactNode; c
           key={picked.word}
           word={picked.word}
           anchor={{ x: picked.x, y: picked.y }}
+          hidden={picked.hidden}
           onClose={() => {
+            rangeRef.current = null;
             setOpen(false);
             setPicked(null);
           }}
@@ -62,7 +93,17 @@ export function WordLookupArea({ children, className }: { children: ReactNode; c
   );
 }
 
-function LookupCard({ word, anchor, onClose }: { word: string; anchor: { x: number; y: number }; onClose: () => void }) {
+function LookupCard({
+  word,
+  anchor,
+  hidden,
+  onClose,
+}: {
+  word: string;
+  anchor: { x: number; y: number };
+  hidden: boolean;
+  onClose: () => void;
+}) {
   const [result, setResult] = useState<Lookup | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +135,8 @@ function LookupCard({ word, anchor, onClose }: { word: string; anchor: { x: numb
   }
 
   const left = Math.max(8, Math.min(anchor.x, window.innerWidth - 336));
-  const top = Math.min(anchor.y + 6, window.innerHeight - 120);
+  // Always just below the word, so the card moves with it; it is hidden, not moved, once the word leaves view.
+  const top = anchor.y + 6;
 
   return (
     <div
@@ -102,7 +144,8 @@ function LookupCard({ word, anchor, onClose }: { word: string; anchor: { x: numb
       aria-label={`Dictionary and thesaurus for ${word}`}
       onMouseUp={(e) => e.stopPropagation()}
       onKeyUp={(e) => e.stopPropagation()}
-      style={{ left, top, maxHeight: "70vh" }}
+      // Hidden, not closed, while the word is scrolled away: the lookup is still there when it comes back.
+      style={{ left, top, maxHeight: "70vh", visibility: hidden ? "hidden" : undefined }}
       className="fixed z-50 flex w-80 flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-lg"
     >
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border px-4 py-3">

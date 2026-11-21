@@ -1,12 +1,16 @@
-import { db, newId, type AiSettings, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
+import { db, newId, type AiSettings, type Chapter, type Id, type Manuscript, type OutlineItem, type Suggestion } from "@/db/schema";
+import { expandChapterRefs } from "./chapterRefs";
 import { askAi, parseJson } from "./ai";
+import { categoryOf, ensureSummaries, hasFreshSummary } from "./chapterSummary";
+import type { GenreCategory } from "./genres";
 import { chapterLabel, numberChapters, sortChapters } from "./chapters";
 import { genreById, genreContext } from "./genres";
 import { htmlToText } from "./text";
 
 /**
- * The developmental pass. Four specialist editors read the whole book, each with
- * its own expertise, and return notes on the big picture. The notes are saved as
+ * The developmental pass. Four specialist editors read the whole book in brief (an
+ * AI summary of every chapter, made from its full text), each with its own
+ * expertise, and return notes on the big picture. The notes are saved as
  * suggestions, so the author can read them in the Edit screen, address them and
  * dismiss them. Every editor runs on the model chosen for the developmental pass.
  */
@@ -19,11 +23,20 @@ export interface DevelopmentalAgent {
   persona: string;
   /** What the AI is asked to look for in the whole book. */
   task: string;
+  /** A couple of words shown on the progress bar while this editor reads, e.g. "Tracing the plot". */
+  thinking: string;
+}
+
+/** Where the developmental pass is up to: how far along (0 to 1) and a couple of words on what is happening. */
+export interface DevelopmentalProgress {
+  fraction: number;
+  label: string;
 }
 
 export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   {
     id: "structure",
+    thinking: "Tracing the plot",
     name: "Story structure editor",
     persona:
       "You are the story structure editor at a small publishing house. You look at the shape of the whole book: the plot, the narrative arc from the opening to the resolution, the turning points and whether each part of the structure earns its place. For non-fiction you look at the shape of the argument instead. You do not comment on sentences.",
@@ -31,6 +44,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "character",
+    thinking: "Getting to know the cast",
     name: "Character editor",
     persona:
       "You are the character editor at a small publishing house. You check that each character behaves consistently with who they are, that their motives are clear and that their arcs develop. You also check continuity of what characters know, where they are and what they have been told. You do not comment on sentences.",
@@ -38,6 +52,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "pacing",
+    thinking: "Feeling the rhythm",
     name: "Pacing editor",
     persona:
       "You are the pacing editor at a small publishing house. You judge how fast the book moves: where tension rises and sags, whether scenes run too long or too short, and whether the order of scenes makes the reader want to keep going. You do not comment on sentences.",
@@ -45,6 +60,7 @@ export const DEVELOPMENTAL_AGENTS: DevelopmentalAgent[] = [
   },
   {
     id: "organization",
+    thinking: "Checking loose threads",
     name: "Organisation editor",
     persona:
       "You are the organisation editor at a small publishing house. You check how the whole book is put together: that the promises made early are kept, that subplots and threads are closed or deliberately left open, that chapters are in the best order, and that the book is complete. For non-fiction you check that the argument is ordered so that each chapter builds on the one before. You do not comment on sentences.",
@@ -68,17 +84,24 @@ function outlineLines(items: OutlineItem[]): string[] {
   return lines;
 }
 
+/** What the developmental editors read for one chapter: its AI summary, made from every word of it. */
+function chapterBrief(chapter: Chapter, kind: GenreCategory): string {
+  if (!htmlToText(chapter.content).trim()) return "(empty)";
+  if (hasFreshSummary(chapter, kind)) return chapter.devSummary!.text.replace(/\s+/g, " ");
+  return "(not summarised yet: run the developmental pass to summarise it)";
+}
+
 /**
  * The whole book in brief: the title and genre, the outline, and every chapter with
- * its number in square brackets and the start of its text. Notes refer to a chapter
- * by that number.
+ * its number in square brackets and its AI summary (see chapterSummary.ts). Notes
+ * refer to a chapter by that number. Pass `chapters` to use summaries just written.
  */
-export async function bigPicture(manuscript: Manuscript): Promise<string> {
-  const [items, chapters] = await Promise.all([
+export async function bigPicture(manuscript: Manuscript, chapters?: Chapter[]): Promise<string> {
+  const [items, all] = await Promise.all([
     db.outlineItems.where("manuscriptId").equals(manuscript.id).toArray(),
-    db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
+    chapters ?? db.chapters.where("manuscriptId").equals(manuscript.id).toArray(),
   ]);
-  const sorted = sortChapters(chapters.filter((chapter) => chapter.kind !== "scrap"));
+  const sorted = sortChapters(all.filter((chapter) => chapter.kind !== "scrap"));
   const numbers = numberChapters(sorted);
   const parts = [`Title: ${manuscript.title}`];
   const genre = genreContext(genreById(manuscript.genre));
@@ -89,14 +112,24 @@ export async function bigPicture(manuscript: Manuscript): Promise<string> {
   parts.push(
     `Chapters:\n${sorted
       .map(
-        (c, i) =>
-          `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${htmlToText(c.content)
-            .slice(0, 240)
-            .replace(/\s+/g, " ")}`,
+        (c, i) => `- [${i + 1}] ${chapterLabel(c, numbers.get(c.id), "numbered-with-title")} (${c.wordCount} words): ${chapterBrief(c, categoryOf(manuscript))}`,
       )
       .join("\n")}`,
   );
   return parts.join("\n\n");
+}
+
+/** bigPicture, after summarising any chapter that is new or changed. Used by the per-chapter developmental review. */
+export async function summarisedBigPicture(
+  manuscript: Manuscript,
+  settings: AiSettings,
+  onProgress?: (message: string) => void,
+): Promise<string> {
+  const loaded = (await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((c) => c.kind !== "scrap");
+  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total, chapter) =>
+    onProgress?.(`Summarising chapters for the editors: ${done + 1} of ${total} ("${chapter.title || "Untitled"}")…`),
+  );
+  return bigPicture(manuscript, chapters);
 }
 
 export interface DevelopmentalResult {
@@ -108,19 +141,35 @@ export interface DevelopmentalResult {
 
 /**
  * Runs the four developmental editors over the whole book, one after another, and
- * saves their notes. If any editor fails, nothing is saved and the error is thrown.
+ * saves their notes. First every chapter is summarised from its full text (only
+ * chapters that are new or changed since their last summary), so the editors see
+ * the whole book in brief. If any editor fails, no notes are saved and the error
+ * is thrown; summaries already written are kept for next time.
  */
-export async function runDevelopmentalReview(manuscript: Manuscript, settings: AiSettings): Promise<DevelopmentalResult> {
-  const chapters = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
-  if (!chapters.some((c) => htmlToText(c.content).trim())) {
+export async function runDevelopmentalReview(
+  manuscript: Manuscript,
+  settings: AiSettings,
+  onProgress?: (progress: DevelopmentalProgress) => void,
+): Promise<DevelopmentalResult> {
+  const loaded = sortChapters((await db.chapters.where("manuscriptId").equals(manuscript.id).toArray()).filter((chapter) => chapter.kind !== "scrap"));
+  if (!loaded.some((c) => htmlToText(c.content).trim())) {
     throw new Error("Write at least one chapter before the developmental pass.");
   }
-  const context = (await bigPicture(manuscript)).slice(0, 30000);
+  // The bar moves one step per chapter that needs a fresh summary, then one step per editor.
+  const editors = DEVELOPMENTAL_AGENTS.length;
+  let summarySteps = 0;
+  const chapters = await ensureSummaries(settings, loaded, categoryOf(manuscript), (done, total) => {
+    summarySteps = total;
+    onProgress?.({ fraction: done / (total + editors), label: `Reading chapter ${done + 1} of ${total}` });
+  });
+  // No cap: summaries keep the book small, and cutting it would hide chapters from the editors.
+  const context = await bigPicture(manuscript, chapters);
   const found: Suggestion[] = [];
   const perAgent: DevelopmentalResult["perAgent"] = [];
   const now = Date.now();
 
-  for (const agent of DEVELOPMENTAL_AGENTS) {
+  for (const [index, agent] of DEVELOPMENTAL_AGENTS.entries()) {
+    onProgress?.({ fraction: (summarySteps + index) / (summarySteps + editors), label: agent.thinking });
     const prompt =
       `${agent.task}\n\n` +
       `Reply with ONLY a JSON array (no prose, no code fences) of at most 6 objects with the keys "chapter" and "comment". ` +
@@ -149,7 +198,8 @@ export async function runDevelopmentalReview(manuscript: Manuscript, settings: A
         kind: "note",
         original: "",
         replacement: "",
-        comment: number >= 1 && chapters[number - 1] ? text : `Whole book: ${text}`,
+        // Each "[n]" is saved with its chapter's name now, while the numbering still matches what the editors read.
+        comment: expandChapterRefs(number >= 1 && chapters[number - 1] ? text : `Whole book: ${text}`, chapters),
         agent: agent.name,
         status: "pending",
         createdAt: now + found.length,

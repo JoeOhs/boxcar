@@ -13,12 +13,15 @@ import {
   moveSceneToChapter,
   saveChapter,
 } from "@/lib/store";
+import { clearRecoveryCopy, saveRecoveryCopy } from "@/lib/draftRecovery";
 import { htmlSpeech } from "@/lib/narration";
 import { escapeHtml, textToParagraphs } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { EditableHtml, EditorToolbar } from "@/components/RichEditor";
 import { Ghostwriter } from "@/components/Ghostwriter";
+import { settleFlagIfDone } from "@/lib/ghostCorrections";
+import { applyProblem, applySuggestion } from "@/lib/suggestions";
 import { Narrator } from "@/components/Narrator";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ResearchPanel } from "@/components/ResearchPanel";
@@ -63,7 +66,11 @@ function useChapterDraft(chapter: Chapter) {
     window.clearTimeout(timer.current);
     timer.current = undefined;
     const { title: t, scenes: s } = latest.current;
-    return saveChapter(chapterId, { title: t, content: serializeScenes(s) }).then(() => setSaved(true));
+    return saveChapter(chapterId, { title: t, content: serializeScenes(s) }).then(() => {
+      // Safely in the database: any copy made while the window was closing is no longer needed.
+      clearRecoveryCopy(chapterId);
+      setSaved(true);
+    });
   }, [chapterId]);
 
   const commit = useCallback(
@@ -80,15 +87,22 @@ function useChapterDraft(chapter: Chapter) {
 
   useEffect(() => {
     const onLeave = () => {
-      if (timer.current !== undefined) void flush();
+      if (timer.current === undefined) return;
+      // The database save below is asynchronous and the closing page may not wait for it,
+      // so keep a synchronous copy first; the next start restores it if needed.
+      const { title: t, scenes: s } = latest.current;
+      saveRecoveryCopy(chapterId, t, serializeScenes(s));
+      void flush();
     };
     window.addEventListener("beforeunload", onLeave);
+    window.addEventListener("pagehide", onLeave);
     return () => {
       window.removeEventListener("beforeunload", onLeave);
+      window.removeEventListener("pagehide", onLeave);
       // Leaving the chapter (or the screen) must never lose the last keystrokes.
       if (timer.current !== undefined) void flush();
     };
-  }, [flush]);
+  }, [flush, chapterId]);
 
   const focusScene = useCallback((id: Id) => {
     window.setTimeout(() => {
@@ -481,6 +495,7 @@ function ChapterDesk({
   listenOpen,
   onCloseListen,
   onMoveScene,
+  onReload,
 }: {
   chapter: Chapter;
   manuscript: Manuscript;
@@ -490,9 +505,11 @@ function ChapterDesk({
   listenOpen: boolean;
   onCloseListen: () => void;
   onMoveScene: (sceneId: Id, targetChapterId: Id) => void;
+  /** Reloads the chapter from the database, after a correction changed it. */
+  onReload: () => void;
 }) {
   const draft = useChapterDraft(chapter);
-  const { setFlusher, pushedNote, setPushedNote } = useApp();
+  const { setFlusher, pushedNote, setPushedNote, ghostRequest, setGhostRequest, setChapterId } = useApp();
   const phase = manuscriptPhase(manuscript);
   const selectedScene = draft.scenes.find((scene) => scene.id === draft.selectedId) ?? draft.scenes[0];
   // The chapter as it is on the page now (including unsaved typing), read aloud by the listening bar.
@@ -552,7 +569,8 @@ function ChapterDesk({
                   scene={s}
                   index={i}
                   chapters={menu.chapters}
-                  onMoveScene={onMoveScene}
+                  // Save the draft first: a pending save after the move would write the moved scene back here.
+                  onMoveScene={(sceneId, target) => void draft.flush().then(() => onMoveScene(sceneId, target))}
                 />
               ))}
               <Button variant="outline" className="w-full border-dashed" onClick={() => draft.addScene()}>
@@ -574,6 +592,26 @@ function ChapterDesk({
             const target = sceneId && draft.scenes.some((scene) => scene.id === sceneId) ? sceneId : selectedScene.id;
             draft.appendToScene(target, text);
           }}
+          request={ghostRequest?.mode === "passage" && ghostRequest.chapterId === chapter.id ? ghostRequest : null}
+          onRequestTaken={() => setGhostRequest(null)}
+          walk={
+            ghostRequest?.mode === "corrections"
+              ? {
+                  flagId: ghostRequest.flagId,
+                  onShowChapter: setChapterId,
+                  // Save the typing first, change the chapter in the database, then reload it on the page.
+                  onApply: async (correction) => {
+                    await draft.flush();
+                    const problem = applyProblem(await applySuggestion(correction));
+                    if (problem) return problem;
+                    await settleFlagIfDone(correction);
+                    onReload();
+                    return null;
+                  },
+                  onClose: () => setGhostRequest(null),
+                }
+              : null
+          }
         />
       ) : null}
     </>
@@ -581,8 +619,12 @@ function ChapterDesk({
 }
 
 function WriteBody({ manuscript }: { manuscript: Manuscript }) {
-  const { chapterId, setChapterId } = useApp();
-  const [ghostwriterOpen, setGhostwriterOpen] = useState(false);
+  const { chapterId, setChapterId, ghostRequest } = useApp();
+  // A flag sent from the Edit screen opens the Ghostwriter beside the chapter.
+  const [ghostwriterOpen, setGhostwriterOpen] = useState(() => ghostRequest !== null);
+  useEffect(() => {
+    if (ghostRequest) setGhostwriterOpen(true);
+  }, [ghostRequest]);
   const [researchOpen, setResearchOpen] = useState(false);
   const [listenOpen, setListenOpen] = useState(false);
   // Bumped after a scene has been moved between chapters, so the open chapter reloads its scenes.
@@ -688,6 +730,7 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
             listenOpen={listenOpen}
             onCloseListen={() => setListenOpen(false)}
             onMoveScene={(sceneId, target) => void moveSceneAction(sceneId, target)}
+            onReload={() => setReload((value) => value + 1)}
           />
         ) : (
           <>

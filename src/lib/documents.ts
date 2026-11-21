@@ -26,8 +26,7 @@ export interface ReadDocument {
   parts?: { title: string; blocks: DocBlock[] }[];
 }
 
-export const IMPORT_EXTENSIONS = [".txt", ".md", ".markdown", ".html", ".htm", ".docx", ".epub"];
-export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.join(",");
+export { IMPORT_ACCEPT, IMPORT_EXTENSIONS } from "./importFormats";
 
 export function extensionOf(name: string): string {
   const at = name.lastIndexOf(".");
@@ -166,11 +165,28 @@ function inlineHtml(node: Node): string {
 
 const HEADING_LEVEL: Record<string, 1 | 2 | 3> = { h1: 1, h2: 2, h3: 3, h4: 3, h5: 3, h6: 3 };
 
+/**
+ * A heading's text. Books often set the number and the title as separate pieces,
+ * e.g. <h1><span>Chapter 3</span>The Storm</h1> or with a <br> between them; plain
+ * textContent would run them together ("Chapter 3The Storm"), so they are joined
+ * as "Chapter 3: The Storm".
+ */
+function headingText(heading: Element): string {
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const pieces = Array.from(heading.childNodes)
+    .map((node) => clean(node.textContent ?? ""))
+    .filter(Boolean);
+  if (pieces.length > 1 && /^(chapter|part|book)\s+\S+$/i.test(pieces[0])) {
+    return `${pieces[0]}: ${pieces.slice(1).join(" ")}`;
+  }
+  return clean(heading.textContent ?? "");
+}
+
 function walkHtml(parent: Element, blocks: DocBlock[]): void {
   for (const child of Array.from(parent.children)) {
     const tag = child.tagName.toLowerCase();
     if (tag in HEADING_LEVEL) {
-      const text = (child.textContent ?? "").replace(/\s+/g, " ").trim();
+      const text = headingText(child);
       if (text) blocks.push({ type: "heading", level: HEADING_LEVEL[tag], text });
     } else if (tag === "p") {
       const block = paragraph(inlineHtml(child));
@@ -218,8 +234,17 @@ function wordFlag(rPr: Element | null, tag: string): boolean {
   return value !== "0" && value !== "false";
 }
 
+/** Opens a .docx or .epub (both are zip files), with a plain message when the file is damaged (F19). */
+async function openZip(file: File, kind: string): Promise<JSZip> {
+  try {
+    return await JSZip.loadAsync(await file.arrayBuffer());
+  } catch {
+    throw new Error(`Could not read "${file.name}". It is not a valid ${kind} file, or it is damaged. Try saving it again from the program that made it.`);
+  }
+}
+
 async function readDocx(file: File): Promise<ReadDocument> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const zip = await openZip(file, "Word document (.docx)");
   const main = zip.file("word/document.xml");
   if (!main) throw new Error("That file is not a Word document (.docx) this app can read.");
   const xml = new DOMParser().parseFromString(await main.async("string"), "application/xml");
@@ -295,7 +320,7 @@ function resolveInZip(base: string, href: string): string {
 }
 
 async function readEpub(file: File): Promise<ReadDocument> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const zip = await openZip(file, "epub");
   const container = zip.file("META-INF/container.xml");
   if (!container) throw new Error("That file is not an epub this app can read.");
   const containerXml = new DOMParser().parseFromString(await container.async("string"), "application/xml");
@@ -318,7 +343,12 @@ async function readEpub(file: File): Promise<ReadDocument> {
     if (!entry || /\bnav\b/.test(entry.properties)) continue;
     const page = zip.file(resolveInZip(opfPath, entry.href));
     if (!page) continue;
-    const { title, blocks } = readHtml(await page.async("string"));
+    const source = await page.async("string");
+    // The cover, title page and copyright page are made again on export; they are not chapters.
+    if (/epub:type="[^"]*\b(cover|titlepage|copyright-page)\b/.test(source) || /(^|\/)(cover|title-?page|copyright)\.x?html?$/i.test(entry.href)) {
+      continue;
+    }
+    const { title, blocks } = readHtml(source);
     if (blocks.length === 0) continue;
     const heading = blocks.find((b): b is Extract<DocBlock, { type: "heading" }> => b.type === "heading");
     parts.push({ title: heading?.text ?? title ?? "", blocks });
