@@ -13,6 +13,8 @@ import { htmlToText } from "@/lib/text";
 import { universeToText, useUniverseNodes } from "@/lib/universe";
 import { cn } from "@/lib/utils";
 import { useApp, type GhostRequest } from "@/state/AppState";
+import { CorrectionsWalk } from "@/components/CorrectionsWalk";
+import type { Suggestion } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -80,6 +82,7 @@ export function Ghostwriter({
   onAppend,
   request,
   onRequestTaken,
+  walk,
 }: {
   manuscript: Manuscript;
   /** The open chapter; its mirror is cleared of unreviewed writing when it changes. */
@@ -93,6 +96,13 @@ export function Ghostwriter({
   request?: GhostRequest | null;
   /** Called once the request is taken, so it is not written twice. */
   onRequestTaken?: () => void;
+  /** A whole-book flag being worked through, correction by correction, in this space. */
+  walk?: {
+    flagId: Id;
+    onShowChapter: (chapterId: Id) => void;
+    onApply: (correction: Suggestion) => Promise<string | null>;
+    onClose: () => void;
+  } | null;
 }) {
   const { navigate } = useApp();
   const ai = useAiSettings();
@@ -175,7 +185,7 @@ export function Ghostwriter({
 
   // A flag sent from the Edit screen is written for as soon as the key, the connection and the models are ready.
   useEffect(() => {
-    if (!request || takenRef.current === request || !ai || !reachable || models === undefined || busy) return;
+    if (!request || request.mode !== "passage" || takenRef.current === request || !ai || !reachable || models === undefined || busy) return;
     takenRef.current = request;
     onRequestTaken?.();
     void ask(request.prompt, request.flagId);
@@ -261,6 +271,11 @@ export function Ghostwriter({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-y-auto border-b border-border bg-muted/20" aria-label="The Ghostwriter's writing space">
+        {walk ? (
+          <div className="border-b border-border">
+            <CorrectionsWalk flagId={walk.flagId} chapterId={chapterId} onShowChapter={walk.onShowChapter} onApply={walk.onApply} onClose={walk.onClose} />
+          </div>
+        ) : null}
         {ghost?.done ? (
           <div className="sticky top-2 z-10 flex justify-end pr-3">
             <div className="flex items-center gap-1 rounded-md border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur-sm">

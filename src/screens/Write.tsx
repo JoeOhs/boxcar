@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { EditableHtml, EditorToolbar } from "@/components/RichEditor";
 import { Ghostwriter } from "@/components/Ghostwriter";
+import { settleFlagIfDone } from "@/lib/ghostCorrections";
+import { applyProblem, applySuggestion } from "@/lib/suggestions";
 import { Narrator } from "@/components/Narrator";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ResearchPanel } from "@/components/ResearchPanel";
@@ -493,6 +495,7 @@ function ChapterDesk({
   listenOpen,
   onCloseListen,
   onMoveScene,
+  onReload,
 }: {
   chapter: Chapter;
   manuscript: Manuscript;
@@ -502,9 +505,11 @@ function ChapterDesk({
   listenOpen: boolean;
   onCloseListen: () => void;
   onMoveScene: (sceneId: Id, targetChapterId: Id) => void;
+  /** Reloads the chapter from the database, after a correction changed it. */
+  onReload: () => void;
 }) {
   const draft = useChapterDraft(chapter);
-  const { setFlusher, pushedNote, setPushedNote, ghostRequest, setGhostRequest } = useApp();
+  const { setFlusher, pushedNote, setPushedNote, ghostRequest, setGhostRequest, setChapterId } = useApp();
   const phase = manuscriptPhase(manuscript);
   const selectedScene = draft.scenes.find((scene) => scene.id === draft.selectedId) ?? draft.scenes[0];
   // The chapter as it is on the page now (including unsaved typing), read aloud by the listening bar.
@@ -587,8 +592,26 @@ function ChapterDesk({
             const target = sceneId && draft.scenes.some((scene) => scene.id === sceneId) ? sceneId : selectedScene.id;
             draft.appendToScene(target, text);
           }}
-          request={ghostRequest?.chapterId === chapter.id ? ghostRequest : null}
+          request={ghostRequest?.mode === "passage" && ghostRequest.chapterId === chapter.id ? ghostRequest : null}
           onRequestTaken={() => setGhostRequest(null)}
+          walk={
+            ghostRequest?.mode === "corrections"
+              ? {
+                  flagId: ghostRequest.flagId,
+                  onShowChapter: setChapterId,
+                  // Save the typing first, change the chapter in the database, then reload it on the page.
+                  onApply: async (correction) => {
+                    await draft.flush();
+                    const problem = applyProblem(await applySuggestion(correction));
+                    if (problem) return problem;
+                    await settleFlagIfDone(correction);
+                    onReload();
+                    return null;
+                  },
+                  onClose: () => setGhostRequest(null),
+                }
+              : null
+          }
         />
       ) : null}
     </>
@@ -707,6 +730,7 @@ function WriteBody({ manuscript }: { manuscript: Manuscript }) {
             listenOpen={listenOpen}
             onCloseListen={() => setListenOpen(false)}
             onMoveScene={(sceneId, target) => void moveSceneAction(sceneId, target)}
+            onReload={() => setReload((value) => value + 1)}
           />
         ) : (
           <>

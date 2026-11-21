@@ -37,7 +37,9 @@ import { cn, formatDate } from "@/lib/utils";
 import { useApp } from "@/state/AppState";
 import { AgentChat } from "@/components/AgentChat";
 import { flagRequestPrompt } from "@/components/Ghostwriter";
-import { briefOrder, citedChapters, expandChapterRefs, requestWholeBookCorrections, settleFlagIfDone } from "@/lib/ghostCorrections";
+import { briefOrder, citedChapters, expandChapterRefs, settleFlagIfDone } from "@/lib/ghostCorrections";
+import { startCorrections, useGhostRuns, type GhostRun } from "@/lib/ghostRuns";
+import { applyProblem, applySuggestion } from "@/lib/suggestions";
 import { NoManuscript } from "@/components/NoManuscript";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Badge } from "@/components/ui/badge";
@@ -87,44 +89,6 @@ function useGhostCorrections(manuscriptId: string): Suggestion[] | undefined {
     const rows = await db.suggestions.where("manuscriptId").equals(manuscriptId).toArray();
     return rows.filter((s) => s.forFlag).sort((a, b) => a.createdAt - b.createdAt);
   }, [manuscriptId]);
-}
-
-/** What happened when a suggested change was accepted. */
-type ApplyOutcome = "applied" | "missing" | "ambiguous" | "note";
-
-/**
- * Accepts a suggestion. A change is applied to the chapter: read, snapshot, save and mark
- * accepted in one transaction, so all of it happens or none of it. A note is only marked.
- */
-async function applySuggestion(s: Suggestion): Promise<ApplyOutcome> {
-  if (s.kind === "note") {
-    await db.suggestions.update(s.id, { status: "accepted" });
-    return "note";
-  }
-  return db.transaction("rw", db.chapters, db.revisions, db.suggestions, async () => {
-    const fresh = await db.chapters.get(s.chapterId);
-    if (!fresh) return "missing" as const;
-    const result = replaceInHtml(fresh.content, s.original, s.replacement);
-    if (!result.ok) return result.reason;
-    await snapshotChapter(fresh, "Before accepting a suggestion");
-    await saveChapter(fresh.id, { content: result.html });
-    await db.suggestions.update(s.id, { status: "accepted" });
-    return "applied" as const;
-  });
-}
-
-/** The author-facing message for an accepted change that could not be applied, or null when it went in. */
-function applyProblem(outcome: ApplyOutcome): string | null {
-  if (outcome === "missing") return "That passage is no longer in the chapter, so the change could not be applied.";
-  if (outcome === "ambiguous") return "That passage appears more than once in the chapter, so it was not changed. Make the edit by hand, or reject it.";
-  return null;
-}
-
-/** Where the Ghostwriter is with a whole-book flag sent to it. */
-interface GhostRun {
-  busy: boolean;
-  ok?: boolean;
-  text?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1392,7 +1356,8 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
   const ai = useAiSettings();
   const models = useEditModels();
   const online = useOnline();
-  const [ghostRuns, setGhostRuns] = useState<Record<string, GhostRun>>({});
+  // Shared with the Write screen, so the Ghostwriter's progress shows on both.
+  const ghostRuns = useGhostRuns();
   const chapters = useChapters(manuscript.id);
   const current = chapters?.find((c) => c.id === chapterId) ?? chapters?.[0];
   const numbers = numberChapters(chapters ?? []);
@@ -1415,22 +1380,28 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
   }
 
   /**
-   * A chapter's flag opens that chapter in Write with the Ghostwriter beside it, already writing a
-   * passage for the flag. A whole-book flag stays here: the Ghostwriter proposes corrections across
-   * the chapters concerned, which wait in the flags pane under each chapter.
+   * Every flag opens Write with the Ghostwriter beside the chapter. For a chapter's flag it writes
+   * a passage; for a whole-book flag it reads the chapters concerned and works through its
+   * corrections one at a time, turning the writing space to each one's chapter.
    */
   function sendToGhostwriter(note: Suggestion) {
+    const ordered = briefOrder(chapters ?? []);
     if (isWholeBook(note)) {
-      void correctWholeBook(note);
+      startCorrections(ai ? settingsForStage(ai, models ?? {}, "ghostwriter") : ai, aiReachable(ai, online), manuscript, note);
+      // Open on the first chapter the flag cites while the Ghostwriter reads; it turns the page from there.
+      const first = citedChapters(note.comment, ordered)[0] ?? current;
+      if (first) setChapterId(first.id);
+      setGhostRequest({ mode: "corrections", chapterId: first?.id ?? note.chapterId, flagId: note.id, prompt: "" });
+      navigate("write");
       return;
     }
-    const ordered = briefOrder(chapters ?? []);
     const chapter = ordered.find((c) => c.id === note.chapterId);
     // The chapters the flag cites, beyond its own, go with the request so the Ghostwriter can read them.
     const others = citedChapters(note.comment, ordered).filter((c) => c.id !== note.chapterId);
     const cited = others.map((c) => `${c.title || "Untitled"} (every word):\n${htmlToText(c.content)}`).join("\n\n");
     setChapterId(note.chapterId);
     setGhostRequest({
+      mode: "passage",
       chapterId: note.chapterId,
       flagId: note.id,
       prompt:
@@ -1438,34 +1409,6 @@ function EditBody({ manuscript }: { manuscript: Manuscript }) {
         (cited ? `\n\nThe other chapters this flag mentions:\n${cited}` : ""),
     });
     navigate("write");
-  }
-
-  async function correctWholeBook(note: Suggestion) {
-    const say = (run: GhostRun) => setGhostRuns((runs) => ({ ...runs, [note.id]: run }));
-    if (!ai) return say({ busy: false, ok: false, text: "Add your AI key in Settings first." });
-    if (!aiReachable(ai, online)) return say({ busy: false, ok: false, text: "You are offline. The Ghostwriter needs a connection." });
-    setShowReport(false);
-    say({ busy: true });
-    try {
-      const result = await requestWholeBookCorrections(settingsForStage(ai, models ?? {}, "ghostwriter"), manuscript, note);
-      const where = result.chapters.map((c) => c.title || "Untitled").join(", ");
-      const skipped =
-        result.dropped === 0
-          ? ""
-          : result.dropped === 1
-            ? " One other correction quoted text that isn't in its chapter, so it was left out."
-            : ` ${result.dropped} other corrections quoted text that isn't in their chapters, so they were left out.`;
-      say({
-        busy: false,
-        ok: result.saved > 0,
-        text:
-          result.saved > 0
-            ? `The Ghostwriter proposed ${result.saved} ${result.saved === 1 ? "correction" : "corrections"} in ${where}. Accept or reject each one under its chapter.${skipped}`
-            : `The Ghostwriter found no correction it could make safely.${skipped} Try again, or fix it by hand.`,
-      });
-    } catch (e) {
-      say({ busy: false, ok: false, text: e instanceof Error ? e.message : "The Ghostwriter could not answer." });
-    }
   }
 
   /** From the full report: closes it and opens the flag's chapter with the question in the chat. */

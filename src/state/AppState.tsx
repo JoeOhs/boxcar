@@ -50,11 +50,16 @@ interface AppState {
   toggleTheme: () => void;
 }
 
-/** A flag for the Ghostwriter to write a passage for, in its chapter. */
+/**
+ * A flag sent to the Ghostwriter. "passage": it writes a new passage for a chapter's flag.
+ * "corrections": it works through a whole-book flag's corrections in its space, one at a
+ * time; this request stays until the author closes the walkthrough.
+ */
 export interface GhostRequest {
+  mode: "passage" | "corrections";
   chapterId: Id;
   flagId: Id;
-  /** What the Ghostwriter is asked, shown in its conversation. */
+  /** For a passage: what the Ghostwriter is asked, shown in its conversation. */
   prompt: string;
 }
 

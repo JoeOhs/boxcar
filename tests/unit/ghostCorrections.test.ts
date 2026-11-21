@@ -83,3 +83,19 @@ describe("Ghostwriter corrections for a whole-book flag", () => {
     expect((await db.suggestions.toArray()).filter((s) => s.forFlag)).toHaveLength(0);
   });
 });
+
+describe("the Ghostwriter's work runs outside any screen", () => {
+  it("is busy while it reads, then reports what it proposed; with no key it says so", async () => {
+    const { currentGhostRuns, startCorrections } = await import("@/lib/ghostRuns");
+    const { m, flag } = await memoir();
+    startCorrections(null, true, m, flag);
+    expect(currentGhostRuns()[flag.id]).toEqual({ busy: false, ok: false, text: "Add your AI key in Settings first." });
+
+    mockFetch(openAiReply(JSON.stringify({ plan: "", corrections: [{ chapter: 3, original: "came home in 2004", replacement: "came home in 2002", comment: "" }] })));
+    startCorrections(S, true, m, flag);
+    expect(currentGhostRuns()[flag.id].busy).toBe(true);
+    startCorrections(S, true, m, flag); // a second press while it works does nothing
+    await expect.poll(() => currentGhostRuns()[flag.id].busy).toBe(false);
+    expect(currentGhostRuns()[flag.id]).toMatchObject({ ok: true, text: "The Ghostwriter proposed 1 correction in Return." });
+  });
+});
