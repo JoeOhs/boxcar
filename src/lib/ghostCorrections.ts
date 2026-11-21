@@ -8,28 +8,87 @@ import { htmlToText } from "./text";
 export { briefOrder, citedChapters, expandChapterRefs };
 
 /**
- * The Ghostwriter's answer to a whole-book developmental flag: a short plan, and exact
- * corrections across the chapters the flag is about. Each correction becomes a change the
- * author accepts or rejects in the flags pane, under its own chapter.
+ * The Ghostwriter's answer to a whole-book developmental flag: a short plan, and corrections
+ * across the chapters the flag is about. A correction whose quote is found in its chapter
+ * becomes a change the author accepts or rejects; one that cannot be placed exactly becomes a
+ * "make this change by hand" item, so the Ghostwriter's work is never thrown away.
  */
 
 /** Most text sent when a flag cites no chapter: the start of the book, in order, up to this many characters. */
 const UNCITED_BOOK_CHARACTERS = 60000;
 
+/** Why a correction could not be placed in the text exactly. */
+export type PlaceProblem = "missing" | "repeated" | "paragraphs";
+
 export interface CorrectionsResult {
-  /** Corrections saved for the author to accept or reject. */
+  /** Corrections placed exactly, ready to accept or reject. */
   saved: number;
-  /** Corrections dropped because the passage they quote is not in that chapter word for word. */
-  dropped: number;
+  /** Corrections kept for the author to make by hand, with why each could not be placed. */
+  byHand: PlaceProblem[];
+  /** Entries left out because they changed nothing or named no passage. */
+  skipped: number;
   /** The chapters that received corrections, in book order. */
   chapters: Chapter[];
 }
 
+const SINGLE_QUOTES = "‘’‚‛′";
+const DOUBLE_QUOTES = "“”„‟″";
+const DASHES = "‐‑‒–—―−";
+
 /**
- * Asks the Ghostwriter to fix a whole-book flag with exact corrections. It reads the
- * book in brief plus the full text of every chapter the flag cites (or, when it cites
- * none, as much of the book as fits). A correction is kept only if the passage it
- * quotes is really in that chapter, so a misremembered quote can never change the text.
+ * Folds the differences a model often makes when copying text: curly and straight quotes,
+ * dash styles, the ellipsis character and three dots, and any run of spaces. Returns the
+ * folded text and, for each folded character, where it came from in the original.
+ */
+function fold(text: string): { folded: string; from: number[] } {
+  let folded = "";
+  const from: number[] = [];
+  const push = (s: string, at: number) => {
+    for (const ch of s) {
+      folded += ch;
+      from.push(at);
+    }
+  };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      if (!folded.endsWith(" ")) push(" ", i);
+    } else if (SINGLE_QUOTES.includes(ch)) push("'", i);
+    else if (DOUBLE_QUOTES.includes(ch)) push("\"", i);
+    else if (DASHES.includes(ch)) push("-", i);
+    else if (ch === "…") push("...", i);
+    else push(ch, i);
+  }
+  return { folded, from };
+}
+
+/**
+ * Finds a quoted passage in a chapter the way the change will later be applied: inside one
+ * paragraph, exactly once, allowing for the copying differences fold() evens out. Returns
+ * the chapter's own wording of the passage, so applying it matches character for character.
+ */
+export function locateQuote(chapterText: string, quote: string): { original: string } | { problem: PlaceProblem } {
+  const needle = fold(quote.trim()).folded.trim();
+  if (!needle) return { problem: "missing" };
+  const hits: string[] = [];
+  for (const paragraph of chapterText.split("\n")) {
+    const { folded, from } = fold(paragraph);
+    for (let at = folded.indexOf(needle); at !== -1; at = folded.indexOf(needle, at + 1)) {
+      hits.push(paragraph.slice(from[at], from[at + needle.length - 1] + 1));
+    }
+  }
+  if (hits.length === 1) return { original: hits[0] };
+  if (hits.length > 1) return { problem: "repeated" };
+  // Not inside any one paragraph: if it is there across paragraphs, say so.
+  return fold(chapterText).folded.includes(needle) ? { problem: "paragraphs" } : { problem: "missing" };
+}
+
+/**
+ * Asks the Ghostwriter to fix a whole-book flag with exact corrections. It reads the book in
+ * brief plus the full text of every chapter the flag cites (or, when it cites none, as much of
+ * the book as fits). A correction is applied only where its quote is found exactly once; if
+ * the chapter it named does not have it but exactly one other chapter given to it does, it is
+ * placed there (the model mixed up the two kinds of chapter number).
  */
 export async function requestWholeBookCorrections(
   settings: AiSettings,
@@ -40,29 +99,34 @@ export async function requestWholeBookCorrections(
   const ordered = briefOrder(all);
   const numbers = numberChapters(ordered);
   const label = (c: Chapter) => chapterLabel(c, numbers.get(c.id), "numbered-with-title");
+  const key = (c: Chapter) => ordered.indexOf(c) + 1;
   const flagText = expandChapterRefs(flag.comment.replace(/^Whole book:\s*/, ""), ordered);
 
   const cited = citedChapters(flag.comment, ordered);
-  let fullText = "";
-  if (cited.length > 0) {
-    fullText = cited.map((c) => `[${ordered.indexOf(c) + 1}] ${label(c)}:\n${htmlToText(c.content)}`).join("\n\n");
-  } else {
+  let given: Chapter[] = cited;
+  if (cited.length === 0) {
+    given = [];
+    let size = 0;
     for (const c of ordered) {
-      const block = `[${ordered.indexOf(c) + 1}] ${label(c)}:\n${htmlToText(c.content)}`;
-      if (fullText.length + block.length > UNCITED_BOOK_CHARACTERS) break;
-      fullText += (fullText ? "\n\n" : "") + block;
+      size += htmlToText(c.content).length;
+      if (size > UNCITED_BOOK_CHARACTERS && given.length > 0) break;
+      given.push(c);
     }
   }
+  const fullText = given.map((c) => `=== KEY ${key(c)} · ${label(c)} ===\n${htmlToText(c.content)}`).join("\n\n");
 
   const prompt =
     `The ${(flag.agent ?? "developmental editor").toLowerCase()} raised this flag about the whole book, not one chapter:\n"${flagText}"\n\n` +
     `Fix it with the fewest, smallest corrections to the existing text, in my voice. Do not write new scenes or sections.\n\n` +
     `Reply with ONLY a JSON object (no prose, no code fences) with the keys "plan" and "corrections". ` +
     `"plan" is a short note of what you decided, e.g. the one timeline every chapter now follows. ` +
-    `"corrections" is an array of objects with the keys "chapter", "original", "replacement" and "comment": ` +
-    `"chapter" is the number in square brackets of the chapter to change; "original" is a passage copied exactly, word for word, ` +
-    `from that chapter's text below, long enough to appear only once; "replacement" is the corrected passage; ` +
-    `"comment" says briefly why. Only correct chapters whose full text is given below.\n\n` +
+    `"corrections" is an array of objects with the keys "chapter", "original", "replacement" and "comment":\n` +
+    `- "chapter" is the KEY number of the chapter to change, from its "=== KEY n · ... ===" heading below ` +
+    `(for "=== KEY 19 · Chapter 17: The Return ===" it is 19, not 17).\n` +
+    `- "original" is copied from that chapter's text character for character, including its punctuation and quotation marks, ` +
+    `from within a single paragraph, and long enough (a full sentence or more) to appear only once.\n` +
+    `- "replacement" is the corrected passage; "comment" says briefly why.\n` +
+    `Only correct chapters whose full text is given below.\n\n` +
     `THE BOOK IN BRIEF:\n${await bigPicture(manuscript, all)}\n\nFULL TEXT OF THE CHAPTERS CONCERNED:\n${fullText}`;
 
   const reply = await askAi(settings, systemPrompt("ghostwriter", ""), [{ role: "user", content: prompt }]);
@@ -73,34 +137,53 @@ export async function requestWholeBookCorrections(
 
   const now = Date.now();
   const found: Suggestion[] = [];
-  let dropped = 0;
+  const byHand: PlaceProblem[] = [];
+  let skipped = 0;
   for (const entry of parsed.corrections) {
     if (typeof entry !== "object" || entry === null) continue;
     const { chapter, original, replacement, comment } = entry as Record<string, unknown>;
-    const target = typeof chapter === "number" ? ordered[Math.floor(chapter) - 1] : undefined;
+    const named = typeof chapter === "number" ? ordered[Math.floor(chapter) - 1] : undefined;
     const from = typeof original === "string" ? original.trim() : "";
     const to = typeof replacement === "string" ? replacement.trim() : "";
-    if (!target || !from || from === to) {
-      dropped++;
+    if (!from || fold(from).folded === fold(to).folded) {
+      skipped++;
       continue;
     }
-    // The quote must be in the chapter exactly once, or accepting it could change the wrong place.
-    const text = htmlToText(target.content);
-    const first = text.indexOf(from);
-    if (first === -1 || text.indexOf(from, first + 1) !== -1) {
-      dropped++;
-      continue;
+
+    // The chapter it named first, then every other chapter it was given.
+    let placed: { chapter: Chapter; original: string } | null = null;
+    let problem: PlaceProblem = "missing";
+    if (named) {
+      const hit = locateQuote(htmlToText(named.content), from);
+      if ("original" in hit) placed = { chapter: named, original: hit.original };
+      else problem = hit.problem;
     }
+    if (!placed && problem === "missing") {
+      const elsewhere = given
+        .filter((c) => c !== named)
+        .map((c) => ({ chapter: c, hit: locateQuote(htmlToText(c.content), from) }))
+        .filter((x) => "original" in x.hit || x.hit.problem !== "missing");
+      if (elsewhere.length === 1 && "original" in elsewhere[0].hit) {
+        placed = { chapter: elsewhere[0].chapter, original: elsewhere[0].hit.original };
+      } else if (elsewhere.length > 1) {
+        problem = "repeated";
+      } else if (elsewhere.length === 1 && "problem" in elsewhere[0].hit) {
+        problem = elsewhere[0].hit.problem;
+      }
+    }
+
+    if (!placed) byHand.push(problem);
     found.push({
       id: newId(),
-      chapterId: target.id,
+      chapterId: placed?.chapter.id ?? named?.id ?? given[0]?.id ?? flag.chapterId,
       manuscriptId: manuscript.id,
       source: "ai",
       role: "ghostwriter",
       agent: "Ghostwriter",
       stage: "developmental",
-      kind: "change",
-      original: from,
+      // A correction that could not be placed is kept as a note: the author makes it by hand.
+      kind: placed ? "change" : "note",
+      original: placed?.original ?? from,
       replacement: to,
       comment: typeof comment === "string" ? comment.trim() : "",
       forFlag: flag.id,
@@ -119,7 +202,7 @@ export async function requestWholeBookCorrections(
   });
 
   const touched = new Set(found.map((s) => s.chapterId));
-  return { saved: found.length, dropped, chapters: ordered.filter((c) => touched.has(c.id)) };
+  return { saved: found.length - byHand.length, byHand, skipped, chapters: ordered.filter((c) => touched.has(c.id)) };
 }
 
 /**

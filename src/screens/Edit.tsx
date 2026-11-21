@@ -782,21 +782,24 @@ function FlagsPane({
     return (
       <article key={c.id} className={cn("space-y-1.5 rounded-md border border-warning/50 p-2.5 text-sm", !pending && "opacity-60")}>
         <p className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Ghostwriter correction
+          Ghostwriter correction{c.kind === "note" ? " · make by hand" : ""}
           {pending ? null : (
-            <Badge variant={c.status === "accepted" ? "success" : "outline"}>{c.status === "accepted" ? "Accepted" : "Rejected"}</Badge>
+            <Badge variant={c.status === "accepted" ? "success" : "outline"}>
+              {c.kind === "note" ? (c.status === "accepted" ? "Made" : "Skipped") : c.status === "accepted" ? "Accepted" : "Rejected"}
+            </Badge>
           )}
         </p>
-        <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{c.original}</p>
+        {c.kind === "note" ? <p className="text-xs">Couldn't be matched to the text exactly. Find this passage and change it yourself:</p> : null}
+        <p className={cn("rounded bg-destructive/10 px-2 py-1", c.kind !== "note" && "line-through decoration-destructive/50")}>{c.original}</p>
         <p className="rounded bg-success/10 px-2 py-1">{c.replacement}</p>
         {c.comment ? <p className="text-xs text-muted-foreground">{c.comment}</p> : null}
         {pending ? (
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" className="h-7 px-2" onClick={() => void acceptFix(c)}>
-              <Check /> Accept
+              <Check /> {c.kind === "note" ? "I've made it" : "Accept"}
             </Button>
             <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => void rejectFix(c)}>
-              <X /> Reject
+              <X /> {c.kind === "note" ? "Skip" : "Reject"}
             </Button>
           </div>
         ) : null}

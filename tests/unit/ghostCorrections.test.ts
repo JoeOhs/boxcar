@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { db, newId, type AiSettings, type Suggestion } from "@/db/schema";
-import { briefOrder, citedChapters, expandChapterRefs, requestWholeBookCorrections, settleFlagIfDone } from "@/lib/ghostCorrections";
+import { db, newId, type AiSettings, type Chapter, type Suggestion } from "@/db/schema";
+import { briefOrder, citedChapters, expandChapterRefs, locateQuote, requestWholeBookCorrections, settleFlagIfDone } from "@/lib/ghostCorrections";
+import { describeResult } from "@/lib/ghostRuns";
+import { htmlToText } from "@/lib/text";
 import { chapter, mockFetch, openAiReply, seedBook } from "./helpers";
 
 const S: AiSettings = { provider: "openai", apiKey: "k", model: "m" };
@@ -30,7 +32,7 @@ describe("chapter references in flags", () => {
 });
 
 describe("Ghostwriter corrections for a whole-book flag", () => {
-  it("asks about the whole book with the cited chapters in full, and keeps only exact, single quotes", async () => {
+  it("asks about the whole book with the cited chapters in full; a quote it can't place is kept to make by hand", async () => {
     const { m, two, flag } = await memoir();
     const calls = mockFetch(openAiReply(JSON.stringify({
       plan: "Four years abroad: left 1998, home 2002.",
@@ -38,7 +40,6 @@ describe("Ghostwriter corrections for a whole-book flag", () => {
         { chapter: 3, original: "After five years abroad I came home in 2004.", replacement: "After four years abroad I came home in 2002.", comment: "Matches the timeline." },
         { chapter: 3, original: "a sentence that is not in the chapter", replacement: "x", comment: "" },
         { chapter: 2, original: "four years", replacement: "four years", comment: "no change" },
-        { chapter: 42, original: "anything", replacement: "y", comment: "" },
       ],
     })));
 
@@ -48,14 +49,49 @@ describe("Ghostwriter corrections for a whole-book flag", () => {
     expect(sent).toContain("about the whole book, not one chapter");
     expect(sent).not.toContain("DEDICATION\": \"");
     expect(sent).toContain("[2: Chapter 1: Departure]");
+    expect(sent).toContain("=== KEY 3 · Chapter 2: Return ===");
     expect(sent).toContain("I stayed in Thailand for four years.");
     expect(sent).toContain("After five years abroad I came home in 2004.");
-    expect([result.saved, result.dropped, result.chapters.map((c) => c.id)]).toEqual([1, 3, [two.id]]);
+    expect([result.saved, result.byHand, result.skipped, result.chapters.map((c) => c.id)]).toEqual([1, ["missing"], 1, [two.id]]);
 
-    const saved = (await db.suggestions.toArray()).filter((s) => s.forFlag === flag.id);
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toMatchObject({ chapterId: two.id, kind: "change", stage: "developmental", agent: "Ghostwriter", status: "pending" });
+    const saved = (await db.suggestions.toArray()).filter((s) => s.forFlag === flag.id).sort((a, b) => a.createdAt - b.createdAt);
+    expect(saved.map((s) => s.kind)).toEqual(["change", "note"]);
+    expect(saved[0]).toMatchObject({ chapterId: two.id, stage: "developmental", agent: "Ghostwriter", status: "pending" });
+    expect(saved[1]).toMatchObject({ chapterId: two.id, original: "a sentence that is not in the chapter", replacement: "x" });
     expect((await db.suggestions.get(flag.id))?.ghostPlan).toBe("Four years abroad: left 1998, home 2002.");
+  });
+
+  it("matches despite curly quotes, dashes and spacing, and saves the chapter's own wording", async () => {
+    const { m } = await seedBook();
+    const c = await chapter(m, "<p>I’d been gone — five long years — when I came home.</p>", "chapter", "Home");
+    expect(locateQuote(htmlToText(c.content), "I'd been gone - five long  years - when I came home.")).toEqual({
+      original: "I’d been gone — five long years — when I came home.",
+    });
+    expect(locateQuote("A day. A day.", "A day.")).toEqual({ problem: "repeated" });
+    expect(locateQuote("The end of one.\nThe start of two.", "one. The start")).toEqual({ problem: "paragraphs" });
+    expect(locateQuote("Nothing like it.", "Something else.")).toEqual({ problem: "missing" });
+  });
+
+  it("a correction filed under the wrong chapter number is placed in the one chapter that has it", async () => {
+    const { m, two, flag } = await memoir();
+    // The model answered 2 (or a chapter number from a title) for a quote that is in KEY 3.
+    mockFetch(openAiReply(JSON.stringify({
+      plan: "",
+      corrections: [{ chapter: 2, original: "After five years abroad I came home in 2004.", replacement: "After four years abroad I came home in 2002.", comment: "" }],
+    })));
+    const result = await requestWholeBookCorrections(S, m, flag);
+    expect([result.saved, result.byHand]).toEqual([1, []]);
+    expect((await db.suggestions.toArray()).find((s) => s.forFlag === flag.id)).toMatchObject({ chapterId: two.id, kind: "change" });
+  });
+
+  it("the message says how many are ready and why the rest are by hand", () => {
+    const chapters = [{ title: "Return" }] as Chapter[];
+    expect(describeResult({ saved: 2, byHand: ["missing"], skipped: 0, chapters })).toBe(
+      "The Ghostwriter proposed 3 corrections in Return. 1 couldn't be matched to the text exactly (its wording isn't in the chapter), so it is shown for you to make by hand.",
+    );
+    expect(describeResult({ saved: 0, byHand: ["missing", "repeated", "missing"], skipped: 0, chapters })).toBe(
+      "The Ghostwriter proposed 3 corrections in Return. None could be matched to the text exactly (its wording isn't in the chapter; the passage appears more than once), so each is shown for you to make by hand.",
+    );
   });
 
   it("asking again replaces corrections still waiting; the flag is Accepted once each is settled", async () => {

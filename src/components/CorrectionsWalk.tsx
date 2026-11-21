@@ -10,6 +10,7 @@ import { startCorrections, useGhostRuns } from "@/lib/ghostRuns";
 import { useChapters, useOnline } from "@/lib/hooks";
 import { useApp } from "@/state/AppState";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /** Types a correction's new wording out a few characters at a time, like the Ghostwriter's other writing. */
 function useTyped(text: string, key: string): { shown: string; done: boolean } {
@@ -68,6 +69,8 @@ export function CorrectionsWalk({
   const pending = corrections.filter((c) => c.status === "pending");
   const current = pending[0];
   const typed = useTyped(current?.replacement ?? "", current?.id ?? "");
+  // A correction the app could not place exactly is a note: the author makes it by hand.
+  const byHand = current?.kind === "note";
 
   // The writing space follows the correction being worked on.
   useEffect(() => {
@@ -113,13 +116,17 @@ export function CorrectionsWalk({
       ) : null}
 
       {run?.busy ? <p className="animate-pulse text-muted-foreground">The Ghostwriter is reading the chapters concerned…</p> : null}
-      {run && !run.busy && run.text && !run.ok ? (
-        <div className="space-y-2">
-          <p className="text-destructive">{run.text}</p>
-          <Button size="sm" variant="outline" onClick={retry}>
-            <RotateCcw /> Try again
-          </Button>
-        </div>
+      {run && !run.busy && run.text ? (
+        run.ok ? (
+          <p className="text-xs text-muted-foreground">{run.text}</p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-destructive">{run.text}</p>
+            <Button size="sm" variant="outline" onClick={retry}>
+              <RotateCcw /> Try again
+            </Button>
+          </div>
+        )
       ) : null}
       {flag?.ghostPlan ? (
         <p className="text-xs">
@@ -132,13 +139,24 @@ export function CorrectionsWalk({
           <p className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
             <span>
               In <span className="font-medium text-foreground">{chapterName(current.chapterId)}</span>
+              {byHand ? " · make this one by hand" : ""}
             </span>
             <span className="tabular-nums">
               {corrections.length - pending.length + 1} of {corrections.length}
             </span>
           </p>
-          <p className="rounded bg-destructive/10 px-2 py-1 line-through decoration-destructive/50">{current.original}</p>
+          {byHand ? (
+            <p className="text-xs">
+              The Ghostwriter's quote couldn't be matched to the text exactly, so it can't be applied for you. Find this passage
+              and make the change yourself:
+            </p>
+          ) : null}
+          <p className={cn("rounded bg-destructive/10 px-2 py-1", !byHand && "line-through decoration-destructive/50")}>
+            {byHand ? <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-muted-foreground">Find</span> : null}
+            {current.original}
+          </p>
           <p className="rounded bg-success/10 px-2 py-1">
+            {byHand ? <span className="mb-0.5 block text-[10px] uppercase tracking-wide text-muted-foreground">Change to</span> : null}
             {typed.shown}
             {typed.done ? null : <span className="animate-pulse">▌</span>}
           </p>
@@ -146,10 +164,10 @@ export function CorrectionsWalk({
           {problem ? <p className="text-xs text-destructive">{problem}</p> : null}
           <div className="flex gap-1.5">
             <Button size="sm" disabled={!typed.done || working} onClick={() => void accept(current)}>
-              <Check /> Accept
+              <Check /> {byHand ? "I've made it" : "Accept"}
             </Button>
             <Button size="sm" variant="outline" disabled={working} onClick={() => void reject(current)}>
-              <X /> Reject
+              <X /> {byHand ? "Skip" : "Reject"}
             </Button>
           </div>
         </div>

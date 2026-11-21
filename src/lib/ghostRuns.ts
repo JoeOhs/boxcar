@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { AiSettings, Manuscript, Suggestion } from "@/db/schema";
-import { requestWholeBookCorrections } from "./ghostCorrections";
+import { requestWholeBookCorrections, type CorrectionsResult, type PlaceProblem } from "./ghostCorrections";
 
 /**
  * The Ghostwriter's work on whole-book flags, kept outside any screen. A request keeps
@@ -37,6 +37,28 @@ export function useGhostRuns(): Record<string, GhostRun> {
   return useSyncExternalStore(subscribe, () => runs);
 }
 
+const WHY: Record<PlaceProblem, string> = {
+  missing: "its wording isn't in the chapter",
+  repeated: "the passage appears more than once",
+  paragraphs: "it runs across two paragraphs",
+};
+
+/** What the Ghostwriter proposed, in words: how many corrections are ready, and how many are for the author to make by hand, and why. */
+export function describeResult(result: CorrectionsResult): string {
+  const total = result.saved + result.byHand.length;
+  if (total === 0) return "The Ghostwriter found nothing it could correct. Try again, or fix it by hand.";
+  const where = result.chapters.map((c) => c.title || "Untitled").join(", ");
+  let text = `The Ghostwriter proposed ${total} ${total === 1 ? "correction" : "corrections"} in ${where}.`;
+  if (result.byHand.length > 0) {
+    const reasons = [...new Set(result.byHand)].map((p) => WHY[p]).join("; ");
+    text +=
+      result.byHand.length === total
+        ? ` None could be matched to the text exactly (${reasons}), so each is shown for you to make by hand.`
+        : ` ${result.byHand.length} couldn't be matched to the text exactly (${reasons}), so ${result.byHand.length === 1 ? "it is" : "they are"} shown for you to make by hand.`;
+  }
+  return text;
+}
+
 /**
  * Starts the Ghostwriter on a whole-book flag: it reads the chapters concerned and proposes
  * corrections. Does nothing while a request for the same flag is still running.
@@ -48,21 +70,7 @@ export function startCorrections(settings: AiSettings | null | undefined, reacha
   set(flag.id, { busy: true });
   requestWholeBookCorrections(settings, manuscript, flag).then(
     (result) => {
-      const where = result.chapters.map((c) => c.title || "Untitled").join(", ");
-      const skipped =
-        result.dropped === 0
-          ? ""
-          : result.dropped === 1
-            ? " One other correction quoted text that isn't in its chapter, so it was left out."
-            : ` ${result.dropped} other corrections quoted text that isn't in their chapters, so they were left out.`;
-      set(flag.id, {
-        busy: false,
-        ok: result.saved > 0,
-        text:
-          result.saved > 0
-            ? `The Ghostwriter proposed ${result.saved} ${result.saved === 1 ? "correction" : "corrections"} in ${where}.${skipped}`
-            : `The Ghostwriter found no correction it could make safely.${skipped} Try again, or fix it by hand.`,
-      });
+      set(flag.id, { busy: false, ok: result.saved + result.byHand.length > 0, text: describeResult(result) });
     },
     (e: unknown) => set(flag.id, { busy: false, ok: false, text: e instanceof Error ? e.message : "The Ghostwriter could not answer." }),
   );
